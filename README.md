@@ -14,6 +14,8 @@
   <img alt="Jetpack Compose" src="https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white" />
   <img alt="AWS" src="https://img.shields.io/badge/AWS-Cognito%20%C2%B7%20EC2%20%C2%B7%20Route%2053-FF9900?logo=amazonwebservices&logoColor=white" />
   <img alt="Hilt" src="https://img.shields.io/badge/DI-Hilt-2E7D32" />
+  <a href="LICENSE"><img alt="License: PolyForm Noncommercial" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue" /></a>
+  <a href="https://github.com/tsk0211/ServerWatcher/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/tsk0211/ServerWatcher?include_prereleases" /></a>
 </p>
 
 ---
@@ -78,6 +80,15 @@ The `cdk/` folder contains the CDK stack that provisions the user pool, identity
 Kotlin 2.0 · Jetpack Compose (Material 3) · Hilt · Room + SQLCipher · Kotlin Coroutines / Flow ·
 AWS SDK for Kotlin (Cognito, EC2, Route 53) · Ktor client · Navigation Compose · AWS CDK (TypeScript)
 
+## Install
+
+Download the latest signed APK from the [Releases page](https://github.com/tsk0211/ServerWatcher/releases/latest)
+(also kept in [`apk/`](apk/) on the `release` branch), verify it with the `.sha256` file, and open it on your
+phone. Android will ask you to allow installs from your browser or file manager the first time.
+
+ServerWatcher has **no server of its own**. Each person deploys the small AWS backend into their own
+account (step 1 below), so your credentials, instances and DNS never leave your phone and your AWS account.
+
 ## Getting started
 
 1. **Deploy the backend** — `cd cdk && npm install && npx cdk deploy`
@@ -98,6 +109,19 @@ _Screenshots coming soon._
 ## Status
 
 Early, single-user project under active development.
+
+## Branches and releases
+
+`dev` is where work happens; `release` is the default branch and carries the latest APK. Releases are cut by
+tagging `release` — see [docs/RELEASING.md](docs/RELEASING.md).
+
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE). You are free to use, study, modify and share ServerWatcher for any
+noncommercial purpose (personal use, hobby projects, research, education, charities). You may **not** use it
+for commercial purposes, which includes selling it or building it into a product or service you sell. If you
+want to use it commercially, please get in touch. This is a source-available license rather than an OSI
+open-source one, and this is not legal advice.
 
 ## Security notes
 

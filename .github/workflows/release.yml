@@ -1,0 +1,103 @@
+name: Release
+
+# Run by pushing a version tag that points at a commit on the `release` branch:
+#   git tag v0.1.0 && git push origin v0.1.0
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, sign and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tag must be on the release branch
+        run: |
+          git fetch origin release
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/release; then
+            echo "::error::$GITHUB_REF_NAME is not on the release branch. Promote dev to release first."
+            exit 1
+          fi
+
+      - name: Signing secrets must exist
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Repository secret $name is not set. See docs/RELEASING.md."
+              exit 1
+            fi
+          done
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+
+      - name: Test and build signed APK
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ./gradlew --no-daemon testDebugUnitTest assembleRelease \
+            -PversionName="$VERSION" -PversionCode="$GITHUB_RUN_NUMBER"
+
+      - name: Verify signature and name the artifacts
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
+          "$APKSIGNER" verify --verbose app/build/outputs/apk/release/app-release.apk
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/ServerWatcher-$VERSION.apk"
+          (cd dist && sha256sum "ServerWatcher-$VERSION.apk" > "ServerWatcher-$VERSION.apk.sha256")
+          cat "dist/ServerWatcher-$VERSION.apk.sha256"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PRERELEASE=""
+          case "$VERSION" in 0.*|*-*) PRERELEASE="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/ServerWatcher-$VERSION.apk" "dist/ServerWatcher-$VERSION.apk.sha256" \
+            --title "ServerWatcher $VERSION" --generate-notes $PRERELEASE
+
+      - name: Keep the latest APK on the release branch
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp -r dist "$RUNNER_TEMP/dist"
+          git checkout -B release origin/release
+          mkdir -p apk
+          cp "$RUNNER_TEMP/dist/ServerWatcher-$VERSION.apk" apk/ServerWatcher-latest.apk
+          (cd apk && sha256sum ServerWatcher-latest.apk > ServerWatcher-latest.apk.sha256)
+          git add apk
+          git commit -m "Add ServerWatcher $VERSION APK"
+          git push origin release

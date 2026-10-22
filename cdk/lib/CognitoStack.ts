@@ -40,6 +40,9 @@ export class CognitoStack extends Construct {
         userSrp: true,
       },
       generateSecret: false,
+      // The app signs in through the Cognito API directly. Without this, CDK enables the hosted-UI
+      // OAuth flows with an example.com callback URL, which nothing here needs.
+      disableOAuth: true,
       accessTokenValidity: cdk.Duration.hours(1),
       idTokenValidity: cdk.Duration.hours(1),
       refreshTokenValidity: cdk.Duration.days(30),
