@@ -32,7 +32,8 @@ points your DNS at whichever instance is the primary once it is running.
 - **Per-instance environment variables** — keep a set of `KEY=value` pairs per instance (import from
   JSON) and push them to the machine as cloud-init user data, written to `/etc/serverwatcher.env` on
   every boot.
-- **Secure sign-in** — Cognito user pool with optional TOTP MFA; short-lived AWS credentials come from a
+- **Secure sign-in** — Cognito user pool with first-login password change and optional TOTP MFA
+  (enrol an authenticator right from Settings); short-lived AWS credentials come from a
   Cognito identity pool, so no long-lived access keys ever live on the device.
 - **Encrypted at rest** — tokens and config in `EncryptedSharedPreferences`, app data in a
   SQLCipher-encrypted Room database.

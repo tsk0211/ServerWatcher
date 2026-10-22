@@ -17,6 +17,11 @@ npx cdk bootstrap   # Only needed once per AWS account/region
 npx cdk deploy
 ```
 
+By default the app role may change DNS records in any hosted zone of the account. To limit it to
+specific zones, pass their IDs: `npx cdk deploy -c hostedZoneIds=Z0123456789ABC,Z0987654321XYZ`.
+If you deployed an earlier version of this stack, run `cdk deploy` again — the role now also allows
+Route 53 record updates and pushing user data to tagged instances.
+
 Note the stack outputs printed at the end:
 - `ServerWatcher-UserPoolId`
 - `ServerWatcher-UserPoolClientId`
@@ -55,15 +60,11 @@ aws cognito-idp admin-create-user \
   --username your@email.com \
   --temporary-password TempP@ss123 \
   --message-action SUPPRESS
-
-# The app cannot yet handle the NEW_PASSWORD_REQUIRED challenge, so make the
-# password permanent up front:
-aws cognito-idp admin-set-user-password   --user-pool-id YOUR_USER_POOL_ID   --username your@email.com   --password 'YourPermanentP@ss1'   --permanent
 ```
 
-> **Known limitation:** the app signs in and verifies an existing TOTP code, but
-> it cannot enrol a new authenticator. Enable MFA for the user from the AWS
-> CLI/console first, or leave MFA off (the pool has it set to optional).
+The temporary password is fine: on first sign-in the app asks you to choose a permanent
+one. You can enable two-factor authentication from **Settings → Two-factor authentication**
+(it shows a key to add to your authenticator app). The pool has MFA set to optional.
 
 ---
 
