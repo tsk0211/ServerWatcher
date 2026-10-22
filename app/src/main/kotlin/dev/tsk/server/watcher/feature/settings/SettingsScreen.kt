@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.tsk.server.watcher.feature.auth.TotpSetupForm
 import dev.tsk.server.watcher.ui.components.ConfirmationDialog
 import dev.tsk.server.watcher.ui.theme.StateError
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +50,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val mfa by viewModel.mfa.collectAsStateWithLifecycle()
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
     if (showLogoutConfirm) {
@@ -61,6 +64,33 @@ fun SettingsScreen(
                 onLogout()
             },
             onDismiss = { showLogoutConfirm = false },
+        )
+    }
+
+    mfa.setup?.let { setup ->
+        AlertDialog(
+            onDismissRequest = { if (!mfa.isLoading) viewModel.dismissMfaSetup() },
+            title = { Text("Set up authenticator") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                ) {
+                    TotpSetupForm(
+                        secret = setup.secret,
+                        accountName = viewModel.accountName,
+                        isLoading = mfa.isLoading,
+                        onSubmit = viewModel::verifyMfaSetup,
+                    )
+                    mfa.error?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissMfaSetup, enabled = !mfa.isLoading) { Text("Cancel") }
+            },
         )
     }
 
@@ -164,6 +194,41 @@ fun SettingsScreen(
                                 color = MaterialTheme.colorScheme.primary,
                             )
                         }
+                    }
+                }
+            }
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                elevation = CardDefaults.cardElevation(2.dp),
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        "Two-factor authentication",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    HorizontalDivider()
+                    Text(
+                        "Protect your account with a code from an authenticator app.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (mfa.enabled) {
+                        Text(
+                            "Authenticator enabled. You will be asked for a code the next time you sign in.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    if (mfa.error != null && mfa.setup == null) {
+                        Text(mfa.error!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                    Button(onClick = viewModel::startMfaSetup, enabled = !mfa.isLoading) {
+                        Text(if (mfa.enabled) "Set up a new authenticator" else "Set up authenticator app")
                     }
                 }
             }

@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -19,6 +21,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,8 +39,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.tsk.server.watcher.core.data.aws.MfaMethod
 import dev.tsk.server.watcher.ui.design.LogoText
-import dev.tsk.server.watcher.ui.theme.ServerWatcherGreen
 
 @Composable
 fun AuthScreen(
@@ -47,15 +50,14 @@ fun AuthScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(uiState) {
-        when (val state = uiState) {
-            is AuthUiState.Success -> onAuthSuccess()
-            is AuthUiState.Error -> {
-                snackbarHostState.showSnackbar(state.message)
-                viewModel.resetError()
-            }
-            else -> Unit
-        }
+    LaunchedEffect(uiState.step) {
+        if (uiState.step is AuthStep.Done) onAuthSuccess()
+    }
+
+    LaunchedEffect(uiState.error) {
+        val message = uiState.error ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(message)
+        viewModel.consumeError()
     }
 
     Scaffold(
@@ -68,15 +70,28 @@ fun AuthScreen(
                 .imePadding(),
             contentAlignment = Alignment.Center,
         ) {
-            when (val state = uiState) {
-                is AuthUiState.MfaRequired -> MfaForm(
-                    session = state.session,
-                    isLoading = false,
-                    onSubmit = { code -> viewModel.submitMfa(state.session, code) },
+            when (val step = uiState.step) {
+                is AuthStep.Mfa -> MfaForm(
+                    method = step.method,
+                    isLoading = uiState.isLoading,
+                    onSubmit = viewModel::submitMfa,
+                    onBack = viewModel::backToLogin,
                 )
-                else -> LoginForm(
-                    isLoading = state is AuthUiState.Loading,
-                    onLogin = { email, password -> viewModel.login(email, password) },
+                is AuthStep.NewPassword -> NewPasswordForm(
+                    isLoading = uiState.isLoading,
+                    onSubmit = viewModel::setNewPassword,
+                    onBack = viewModel::backToLogin,
+                )
+                is AuthStep.MfaSetup -> MfaSetupForm(
+                    step = step,
+                    isLoading = uiState.isLoading,
+                    onSubmit = viewModel::submitTotpSetup,
+                    onRetry = viewModel::retryTotpSetup,
+                    onBack = viewModel::backToLogin,
+                )
+                AuthStep.Credentials, AuthStep.Done -> LoginForm(
+                    isLoading = uiState.isLoading,
+                    onLogin = viewModel::login,
                 )
             }
         }
@@ -131,53 +146,46 @@ private fun LoginForm(isLoading: Boolean, onLogin: (String, String) -> Unit) {
             keyboardActions = KeyboardActions(
                 onDone = {
                     focusManager.clearFocus()
-                    if (email.isNotBlank() && password.isNotBlank()) onLogin(email, password)
+                    if (email.isNotBlank() && password.isNotBlank() && !isLoading) onLogin(email, password)
                 },
             ),
             singleLine = true,
         )
-        Button(
+        PrimaryButton(
+            text = "Sign In",
+            isLoading = isLoading,
+            enabled = email.isNotBlank() && password.isNotBlank(),
             onClick = { onLogin(email, password) },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !isLoading && email.isNotBlank() && password.isNotBlank(),
-        ) {
-            if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.height(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
-            } else {
-                Text("Sign In", fontWeight = FontWeight.SemiBold)
-            }
-        }
+        )
     }
 }
 
 @Composable
-private fun MfaForm(session: String, isLoading: Boolean, onSubmit: (String) -> Unit) {
+private fun MfaForm(
+    method: MfaMethod,
+    isLoading: Boolean,
+    onSubmit: (String) -> Unit,
+    onBack: () -> Unit,
+) {
     var code by remember { mutableStateOf("") }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
+    StepColumn {
         Text(
             text = "Two-Factor Authentication",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.SemiBold,
         )
         Text(
-            text = "Enter the 6-digit code from your authenticator app",
+            text = when (method) {
+                MfaMethod.TOTP -> "Enter the 6-digit code from your authenticator app"
+                MfaMethod.SMS -> "Enter the 6-digit code we sent you by text message"
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedTextField(
             value = code,
-            onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) code = it },
+            onValueChange = { if (it.length <= 6 && it.all(Char::isDigit)) code = it },
             label = { Text("Authentication Code") },
             modifier = Modifier.fillMaxWidth(),
             keyboardOptions = KeyboardOptions(
@@ -185,23 +193,134 @@ private fun MfaForm(session: String, isLoading: Boolean, onSubmit: (String) -> U
                 imeAction = ImeAction.Done,
             ),
             keyboardActions = KeyboardActions(
-                onDone = { if (code.length == 6) onSubmit(code) },
+                onDone = { if (code.length == 6 && !isLoading) onSubmit(code) },
             ),
             singleLine = true,
         )
-        Button(
+        PrimaryButton(
+            text = "Verify",
+            isLoading = isLoading,
+            enabled = code.length == 6,
             onClick = { onSubmit(code) },
+        )
+        TextButton(onClick = onBack, enabled = !isLoading) { Text("Back to sign in") }
+    }
+}
+
+@Composable
+private fun NewPasswordForm(
+    isLoading: Boolean,
+    onSubmit: (String) -> Unit,
+    onBack: () -> Unit,
+) {
+    var password by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf("") }
+    val mismatch = confirm.isNotEmpty() && confirm != password
+    val canSubmit = password.length >= MIN_PASSWORD_LENGTH && password == confirm
+
+    StepColumn {
+        Text(
+            text = "Choose a new password",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = "Your account was created with a temporary password. Set a permanent one to continue.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = { Text("New password") },
+            supportingText = { Text("At least $MIN_PASSWORD_LENGTH characters, with upper and lower case letters and a number") },
             modifier = Modifier.fillMaxWidth(),
-            enabled = !isLoading && code.length == 6,
-        ) {
-            if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.height(20.dp),
-                    strokeWidth = 2.dp,
-                )
-            } else {
-                Text("Verify", fontWeight = FontWeight.SemiBold)
-            }
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+            singleLine = true,
+        )
+        OutlinedTextField(
+            value = confirm,
+            onValueChange = { confirm = it },
+            label = { Text("Confirm password") },
+            isError = mismatch,
+            supportingText = if (mismatch) ({ Text("Passwords do not match") }) else null,
+            modifier = Modifier.fillMaxWidth(),
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { if (canSubmit && !isLoading) onSubmit(password) }),
+            singleLine = true,
+        )
+        PrimaryButton(
+            text = "Set password",
+            isLoading = isLoading,
+            enabled = canSubmit,
+            onClick = { onSubmit(password) },
+        )
+        TextButton(onClick = onBack, enabled = !isLoading) { Text("Back to sign in") }
+    }
+}
+
+@Composable
+private fun MfaSetupForm(
+    step: AuthStep.MfaSetup,
+    isLoading: Boolean,
+    onSubmit: (String) -> Unit,
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+) {
+    StepColumn {
+        Text(
+            text = "Set up two-factor authentication",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        val setup = step.setup
+        when {
+            setup != null -> TotpSetupForm(
+                secret = setup.secret,
+                accountName = step.challenge.username,
+                isLoading = isLoading,
+                onSubmit = onSubmit,
+            )
+            isLoading -> CircularProgressIndicator()
+            else -> Button(onClick = onRetry) { Text("Try again") }
+        }
+        TextButton(onClick = onBack, enabled = !isLoading) { Text("Back to sign in") }
+    }
+}
+
+@Composable
+private fun StepColumn(content: @Composable () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 32.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun PrimaryButton(text: String, isLoading: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !isLoading && enabled,
+    ) {
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.height(20.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.onPrimary,
+            )
+        } else {
+            Text(text, fontWeight = FontWeight.SemiBold)
         }
     }
 }
+
+private const val MIN_PASSWORD_LENGTH = 8
