@@ -1,0 +1,4 @@
+-keep class dev.tsk.server.watcher.** { *; }
+-keep class aws.sdk.kotlin.** { *; }
+-dontwarn okhttp3.**
+-dontwarn okio.**

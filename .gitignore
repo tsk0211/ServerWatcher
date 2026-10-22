@@ -1,0 +1,22 @@
+.gradle/
+build/
+*.iml
+.idea/
+local.properties
+*.keystore
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+build_output*.txt
+.gitkeep
+
+# Kotlin compiler session data
+.kotlin/
+
+# CDK
+cdk/node_modules/
+cdk/cdk.out/
+cdk/dist/
+cdk/**/*.js
+cdk/**/*.d.ts
