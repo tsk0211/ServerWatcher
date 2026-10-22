@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
@@ -37,12 +38,15 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +59,7 @@ import dev.tsk.server.watcher.ui.components.ConfirmationDialog
 import dev.tsk.server.watcher.ui.components.ErrorState
 import dev.tsk.server.watcher.ui.components.UiState
 import dev.tsk.server.watcher.ui.design.Ec2StateChip
+import dev.tsk.server.watcher.ui.design.ShimmerChip
 import dev.tsk.server.watcher.ui.theme.StateError
 import dev.tsk.server.watcher.ui.theme.StateRunning
 
@@ -66,6 +71,21 @@ fun InstanceDetailScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val configs by viewModel.configs.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.readText()
+                ?: error("Could not read file")
+            val json = org.json.JSONObject(text)
+            val map = json.keys().asSequence().associateWith { json.getString(it) }
+            viewModel.importConfigs(map)
+        }.onFailure { e ->
+            viewModel.showImportError(e.message)
+        }
+    }
     var showToggleConfirmation by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var pendingDeleteInstance by remember { mutableStateOf(false) }
@@ -223,12 +243,16 @@ fun InstanceDetailScreen(
                         ) {
                             InfoRow("Instance ID", data.instanceId.ifEmpty { "—" })
                             InfoRow("Region", data.region.ifEmpty { "—" })
-                            InfoRow("Public IP", data.publicIp ?: "—")
+                            InfoRow("Public IP", if (data.isStatusLoading) "loading…" else data.publicIp ?: "—")
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                Ec2StateChip(data.ec2State)
+                                if (data.isStatusLoading) {
+                                    ShimmerChip()
+                                } else {
+                                    Ec2StateChip(data.ec2State)
+                                }
                                 if (data.isPrimary) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(
@@ -253,7 +277,8 @@ fun InstanceDetailScreen(
                     Button(
                         onClick = { showToggleConfirmation = true },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !data.isToggling &&
+                        enabled = !data.isStatusLoading &&
+                                !data.isToggling &&
                                 data.ec2State != Ec2State.PENDING &&
                                 data.ec2State != Ec2State.STOPPING &&
                                 data.ec2State != Ec2State.SHUTTING_DOWN,
@@ -292,8 +317,13 @@ fun InstanceDetailScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text("Config Variables", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                IconButton(onClick = { showAddConfigDialog = true }) {
-                                    Icon(Icons.Default.Add, contentDescription = "Add variable", modifier = Modifier.size(20.dp))
+                                Row {
+                                    IconButton(onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) }) {
+                                        Icon(Icons.Default.Upload, contentDescription = "Import from JSON", modifier = Modifier.size(20.dp))
+                                    }
+                                    IconButton(onClick = { showAddConfigDialog = true }) {
+                                        Icon(Icons.Default.Add, contentDescription = "Add variable", modifier = Modifier.size(20.dp))
+                                    }
                                 }
                             }
                             if (configs.isEmpty()) {
@@ -343,9 +373,15 @@ fun InstanceDetailScreen(
                         }
                         if (data.ec2State != Ec2State.STOPPED) {
                             Text(
-                                "Instance must be stopped to push config",
+                                "Stop the instance first, then push — env vars apply on next start",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Color(0xFFFFD180),
+                            )
+                        } else {
+                            Text(
+                                "After pushing, start the instance — env vars will be written on boot",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }

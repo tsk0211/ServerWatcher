@@ -2,20 +2,14 @@ package dev.tsk.server.watcher.feature.domaindetail
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -84,6 +78,7 @@ import dev.tsk.server.watcher.ui.components.ConfirmationDialog
 import dev.tsk.server.watcher.ui.components.ErrorState
 import dev.tsk.server.watcher.ui.components.UiState
 import dev.tsk.server.watcher.ui.design.Ec2StateChip
+import dev.tsk.server.watcher.ui.design.ShimmerChip
 import kotlinx.coroutines.launch
 
 // Subtle tinted card backgrounds for health status in dark theme
@@ -911,23 +906,3 @@ private fun AddSubdomainSheet(
     }
 }
 
-@Composable
-private fun ShimmerChip() {
-    val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.25f,
-        targetValue = 0.55f,
-        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
-        label = "shimmerAlpha",
-    )
-    Box(
-        modifier = Modifier
-            .padding(top = 4.dp)
-            .width(72.dp)
-            .height(26.dp)
-            .background(
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha * 0.15f),
-                shape = RoundedCornerShape(50),
-            ),
-    )
-}

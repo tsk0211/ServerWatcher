@@ -8,16 +8,22 @@ class PushInstanceConfigUseCase @Inject constructor(
     private val configRepository: IInstanceConfigRepository,
     private val ec2Repository: IEc2Repository,
 ) {
-    suspend operator fun invoke(instanceRowId: String, ec2InstanceId: String, region: String): Result<Unit> {
-        val configs = configRepository.getByInstance(instanceRowId)
-        val envLines = configs.joinToString("\n") { "${it.key}=${it.value}" }
-        val script = buildString {
-            appendLine("#!/bin/bash")
-            appendLine("cat > /etc/serverwatcher.env << 'ENVEOF'")
-            append(envLines)
-            appendLine()
-            append("ENVEOF")
+    suspend operator fun invoke(ec2InstanceId: String, region: String): Result<Unit> {
+        val configs = configRepository.getByInstance(ec2InstanceId)
+
+        // cloud-config with bootcmd runs on EVERY boot, not just first launch.
+        // A plain #!/bin/bash user data script only runs once (cloud-init semaphore).
+        val cloudConfig = buildString {
+            appendLine("#cloud-config")
+            appendLine("bootcmd:")
+            appendLine("  - |")
+            appendLine("    mkdir -p /etc")
+            appendLine("    cat > /etc/serverwatcher.env << 'SWENV'")
+            configs.forEach { appendLine("    ${it.key}=${it.value.replace("\n", "").replace("\r", "")}") }
+            appendLine("    SWENV")
+            append("    chmod 644 /etc/serverwatcher.env")
         }
-        return ec2Repository.modifyUserData(ec2InstanceId, region, script.toByteArray(Charsets.UTF_8))
+
+        return ec2Repository.modifyUserData(ec2InstanceId, region, cloudConfig.toByteArray(Charsets.UTF_8))
     }
 }

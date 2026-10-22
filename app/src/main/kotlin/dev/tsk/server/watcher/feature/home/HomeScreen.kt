@@ -217,7 +217,11 @@ private fun DomainCard(
                     fontWeight = FontWeight.Medium,
                 )
             }
-            Switch(checked = domain.isMasterOn, onCheckedChange = onToggle)
+            Switch(
+                checked = domain.isMasterOn,
+                onCheckedChange = onToggle,
+                enabled = domain.status != DomainStatus.TRANSITIONING,
+            )
         }
     }
 }

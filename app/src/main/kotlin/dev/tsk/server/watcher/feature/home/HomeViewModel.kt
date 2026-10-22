@@ -8,13 +8,17 @@ import dev.tsk.server.watcher.core.domain.model.Domain
 import dev.tsk.server.watcher.core.domain.model.Ec2State
 import dev.tsk.server.watcher.core.domain.model.HostedZoneSummary
 import dev.tsk.server.watcher.core.domain.repository.IDomainRepository
+import dev.tsk.server.watcher.core.domain.repository.IEc2Repository
+import dev.tsk.server.watcher.core.domain.repository.IInstanceRepository
 import dev.tsk.server.watcher.core.domain.repository.IRoute53Repository
 import dev.tsk.server.watcher.core.domain.usecase.ManageDomainUseCase
 import dev.tsk.server.watcher.core.domain.usecase.ObserveDomainStatusUseCase
+import dev.tsk.server.watcher.core.domain.usecase.UpdateDnsRecordUseCase
 import dev.tsk.server.watcher.ui.components.ToastManager
 import dev.tsk.server.watcher.ui.components.ToastType
 import dev.tsk.server.watcher.ui.components.UiState
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,8 +46,11 @@ data class DomainUiModel(
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val domainRepository: IDomainRepository,
+    private val instanceRepository: IInstanceRepository,
+    private val ec2Repository: IEc2Repository,
     private val manageDomain: ManageDomainUseCase,
     private val observeDomainStatus: ObserveDomainStatusUseCase,
+    private val updateDnsRecord: UpdateDnsRecordUseCase,
     private val route53Repository: IRoute53Repository,
     private val toastManager: ToastManager,
 ) : ViewModel() {
@@ -130,7 +137,7 @@ class HomeViewModel @Inject constructor(
                                     DomainStatus.ALL_RUNNING, DomainStatus.MIXED -> true
                                     DomainStatus.ALL_STOPPED                     -> false
                                     DomainStatus.TRANSITIONING                   -> uiModel.isMasterOn
-                                    DomainStatus.UNKNOWN                         -> false
+                                    DomainStatus.UNKNOWN                         -> uiModel.isMasterOn
                                 }
                                 uiModel.copy(instanceCount = total, runningCount = running, status = newStatus, isMasterOn = masterOn)
                             } else uiModel
@@ -156,14 +163,66 @@ class HomeViewModel @Inject constructor(
         }
 
     fun toggleMasterSwitch(domainId: String, newState: Boolean) {
+        // Flip the toggle and lock it immediately — don't wait for EC2 to confirm
+        val before = _uiState.value
+        if (before is UiState.Success) {
+            _uiState.value = UiState.Success(before.data.map {
+                if (it.domainId == domainId) it.copy(isMasterOn = newState, status = DomainStatus.TRANSITIONING) else it
+            })
+        }
         viewModelScope.launch {
             Log.d(TAG, "[HomeVM] toggleMaster domainId=$domainId newState=$newState")
             manageDomain.toggle(domainId, newState)
-                .onSuccess { Log.d(TAG, "[HomeVM] toggleMaster SUCCESS") }
+                .onSuccess {
+                    Log.d(TAG, "[HomeVM] toggleMaster SUCCESS")
+                    if (newState) {
+                        // Start DNS tracking for all primary instances in this domain
+                        val primaries = runCatching { instanceRepository.getAllByDomain(domainId) }
+                            .getOrNull()
+                            ?.filter { it.isPrimary } ?: return@onSuccess
+                        primaries.forEach { inst ->
+                            awaitRunningAndUpdateDns(inst.id, inst.instanceId, inst.region)
+                        }
+                    }
+                }
                 .onFailure { e ->
                     Log.e(TAG, "[HomeVM] toggleMaster failed: ${e.message}", e)
+                    // Roll back: restore previous toggle state
+                    val after = _uiState.value
+                    if (after is UiState.Success) {
+                        _uiState.value = UiState.Success(after.data.map {
+                            if (it.domainId == domainId) it.copy(isMasterOn = !newState, status = DomainStatus.UNKNOWN) else it
+                        })
+                    }
                     toastManager.showToast("Failed to toggle domain: ${e.message}", ToastType.ERROR)
                 }
+        }
+    }
+
+    private fun awaitRunningAndUpdateDns(instanceRowId: String, ec2InstanceId: String, region: String) {
+        viewModelScope.launch {
+            Log.d(TAG, "[HomeVM] awaitRunningAndUpdateDns ec2=$ec2InstanceId")
+            repeat(30) {
+                delay(3_000L)
+                val state = runCatching { ec2Repository.getState(ec2InstanceId, region) }.getOrNull()
+                    ?: return@repeat
+                if (state == Ec2State.RUNNING) {
+                    val ip = runCatching { ec2Repository.getPublicIp(ec2InstanceId, region) }.getOrNull()
+                        ?: return@repeat
+                    Log.d(TAG, "[HomeVM] primary RUNNING ip=$ip — updating DNS")
+                    updateDnsRecord(instanceRowId, ip)
+                        .onSuccess {
+                            Log.d(TAG, "[HomeVM] auto DNS update SUCCESS")
+                            toastManager.showToast("DNS A record updated", ToastType.SUCCESS)
+                        }
+                        .onFailure { e ->
+                            Log.w(TAG, "[HomeVM] auto DNS update failed: ${e.message}")
+                            toastManager.showToast("DNS update failed: ${e.message}", ToastType.ERROR)
+                        }
+                    return@launch
+                }
+                if (!state.isTransitional) return@launch
+            }
         }
     }
 

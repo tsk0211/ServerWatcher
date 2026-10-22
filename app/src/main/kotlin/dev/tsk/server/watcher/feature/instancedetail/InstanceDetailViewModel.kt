@@ -28,6 +28,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -45,6 +47,7 @@ data class InstanceData(
     val publicIp: String?,
     val isPrimary: Boolean = false,
     val domainHostedZoneId: String? = null,
+    val isStatusLoading: Boolean = true,
     val isToggling: Boolean = false,
     val isPushingConfig: Boolean = false,
     val isDnsUpdating: Boolean = false,
@@ -77,8 +80,15 @@ class InstanceDetailViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<UiState<InstanceData>>(UiState.Loading())
     val uiState: StateFlow<UiState<InstanceData>> = _uiState.asStateFlow()
 
-    val configs: StateFlow<List<InstanceConfig>> = instanceConfigRepository
-        .observeByInstance(instanceRowId)
+    // Configs are keyed by EC2 instance ID so the same machine shares one set
+    // across all subdomains. Starts with a placeholder until loadInstance resolves the EC2 ID.
+    private val _ec2InstanceId = MutableStateFlow<String?>(null)
+
+    val configs: StateFlow<List<InstanceConfig>> = _ec2InstanceId
+        .flatMapLatest { ec2Id ->
+            if (ec2Id != null) instanceConfigRepository.observeByInstance(ec2Id)
+            else flowOf(emptyList())
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private var statusPollingJob: Job? = null
@@ -90,6 +100,7 @@ class InstanceDetailViewModel @Inject constructor(
 
     fun retry() {
         Log.d(TAG, "[InstVM] retry()")
+        statusPollingJob?.cancel()
         _uiState.value = UiState.Loading()
         loadInstance()
     }
@@ -114,38 +125,56 @@ class InstanceDetailViewModel @Inject constructor(
     private fun loadInstance() {
         viewModelScope.launch {
             Log.d(TAG, "[InstVM] loadInstance()")
-            runCatching {
-                val instance = instanceRepository.getById(instanceRowId)
-                    ?: error("Instance not found: $instanceRowId")
-                Log.d(TAG, "[InstVM] loaded instance=${instance.instanceId} region=${instance.region}")
 
-                // Fetch status before transitioning out of Loading — avoids misleading "Unknown" flash
-                val status = runCatching { fetchCurrentStatus(instance) }
-                    .getOrElse { e ->
-                        Log.e(TAG, "[InstVM] initial status fetch failed: ${e.message}", e)
-                        StatusResult(Ec2State.UNKNOWN, HealthStatus.Error(e.message ?: "Status fetch failed"), null)
-                    }
+            // Step 1: DB read — fast, show screen immediately
+            val instance = runCatching { instanceRepository.getById(instanceRowId) }
+                .getOrNull()
+            if (instance == null) {
+                _uiState.value = UiState.Error("Instance not found", null)
+                return@launch
+            }
+            Log.d(TAG, "[InstVM] loaded instance=${instance.instanceId} region=${instance.region}")
 
-                val subdomain = subdomainRepository.getById(instance.subdomainId)
-                val domain = subdomain?.let { domainRepository.getById(it.domainId) }
-                Log.d(TAG, "[InstVM] initial status — ec2=${status.ec2State} health=${status.healthStatus} isPrimary=${instance.isPrimary}")
-                _uiState.value = UiState.Success(
-                    InstanceData(
-                        id = instance.id,
-                        instanceId = instance.instanceId,
-                        label = instance.label,
-                        region = instance.region,
-                        ec2State = status.ec2State,
-                        healthStatus = status.healthStatus,
-                        publicIp = status.publicIp,
-                        isPrimary = instance.isPrimary,
-                        domainHostedZoneId = domain?.hostedZoneId,
-                    )
+            val subdomain = subdomainRepository.getById(instance.subdomainId)
+            val domain = subdomain?.let { domainRepository.getById(it.domainId) }
+
+            _ec2InstanceId.value = instance.instanceId
+
+            _uiState.value = UiState.Success(
+                InstanceData(
+                    id = instance.id,
+                    instanceId = instance.instanceId,
+                    label = instance.label,
+                    region = instance.region,
+                    ec2State = Ec2State.UNKNOWN,
+                    healthStatus = HealthStatus.Unknown,
+                    publicIp = null,
+                    isPrimary = instance.isPrimary,
+                    domainHostedZoneId = domain?.hostedZoneId,
+                    isStatusLoading = true,
                 )
-            }.onFailure { e ->
-                Log.e(TAG, "[InstVM] loadInstance failed: ${e.message}", e)
-                _uiState.value = UiState.Error("Failed to load instance: ${e.message}", e as? Exception)
-                toastManager.showToast("Failed to load instance: ${e.message}", ToastType.ERROR)
+            )
+
+            // Step 2: EC2 status — slow, update in place when done
+            val status = runCatching { fetchCurrentStatus(instance) }
+                .getOrElse { e ->
+                    Log.e(TAG, "[InstVM] status fetch failed: ${e.message}", e)
+                    StatusResult(Ec2State.UNKNOWN, HealthStatus.Error(e.message ?: "Status fetch failed"), null)
+                }
+            Log.d(TAG, "[InstVM] status loaded — ec2=${status.ec2State} health=${status.healthStatus}")
+
+            val current = _uiState.value as? UiState.Success ?: return@launch
+            _uiState.value = UiState.Success(
+                current.data.copy(
+                    ec2State = status.ec2State,
+                    healthStatus = status.healthStatus,
+                    publicIp = status.publicIp,
+                    isStatusLoading = false,
+                )
+            )
+
+            if (status.ec2State.isTransitional) {
+                pollUntilStable()
             }
         }
     }
@@ -219,12 +248,13 @@ class InstanceDetailViewModel @Inject constructor(
 
     fun addConfig(key: String, value: String) {
         viewModelScope.launch {
-            Log.d(TAG, "[InstVM] addConfig key=$key")
+            val ec2Id = _ec2InstanceId.value ?: return@launch
+            Log.d(TAG, "[InstVM] addConfig key=$key ec2Id=$ec2Id")
             runCatching {
                 instanceConfigRepository.insert(
                     InstanceConfig(
                         id = UUID.randomUUID().toString(),
-                        instanceId = instanceRowId,
+                        instanceId = ec2Id,
                         key = key.trim(),
                         value = value.trim(),
                     )
@@ -238,10 +268,11 @@ class InstanceDetailViewModel @Inject constructor(
 
     fun updateConfig(id: String, key: String, value: String) {
         viewModelScope.launch {
-            Log.d(TAG, "[InstVM] updateConfig id=$id key=$key")
+            val ec2Id = _ec2InstanceId.value ?: return@launch
+            Log.d(TAG, "[InstVM] updateConfig id=$id key=$key ec2Id=$ec2Id")
             runCatching {
                 instanceConfigRepository.update(
-                    InstanceConfig(id = id, instanceId = instanceRowId, key = key.trim(), value = value.trim())
+                    InstanceConfig(id = id, instanceId = ec2Id, key = key.trim(), value = value.trim())
                 )
             }.onFailure { e ->
                 Log.e(TAG, "[InstVM] updateConfig failed: ${e.message}", e)
@@ -259,6 +290,38 @@ class InstanceDetailViewModel @Inject constructor(
                     toastManager.showToast("Failed to delete config: ${e.message}", ToastType.ERROR)
                 }
         }
+    }
+
+    fun importConfigs(entries: Map<String, String>) {
+        viewModelScope.launch {
+            val ec2Id = _ec2InstanceId.value ?: return@launch
+            Log.d(TAG, "[InstVM] importConfigs ec2Id=$ec2Id count=${entries.size}")
+            runCatching {
+                instanceConfigRepository.deleteAllForInstance(ec2Id)
+                entries.forEach { (key, value) ->
+                    instanceConfigRepository.insert(
+                        InstanceConfig(
+                            id = UUID.randomUUID().toString(),
+                            instanceId = ec2Id,
+                            key = key.trim(),
+                            value = value.trim(),
+                        )
+                    )
+                }
+            }
+                .onSuccess {
+                    Log.d(TAG, "[InstVM] importConfigs SUCCESS")
+                    toastManager.showToast("Imported ${entries.size} variable(s)", ToastType.SUCCESS)
+                }
+                .onFailure { e ->
+                    Log.e(TAG, "[InstVM] importConfigs failed: ${e.message}", e)
+                    toastManager.showToast("Import failed: ${e.message}", ToastType.ERROR)
+                }
+        }
+    }
+
+    fun showImportError(message: String?) {
+        toastManager.showToast("Import failed: ${message ?: "invalid file"}", ToastType.ERROR)
     }
 
     fun updateDnsRecord() {
@@ -293,7 +356,7 @@ class InstanceDetailViewModel @Inject constructor(
             val data = successState.data
             Log.d(TAG, "[InstVM] pushConfig instanceId=${data.instanceId} region=${data.region}")
             _uiState.value = UiState.Success(data.copy(isPushingConfig = true))
-            pushInstanceConfig(instanceRowId, data.instanceId, data.region)
+            pushInstanceConfig(data.instanceId, data.region)
                 .onSuccess {
                     Log.d(TAG, "[InstVM] pushConfig SUCCESS")
                     val after = (_uiState.value as? UiState.Success)?.data ?: data
@@ -321,8 +384,8 @@ class InstanceDetailViewModel @Inject constructor(
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.w(TAG, "[InstVM] pollUntilStable — fetch failed: ${e.message}")
-                    break
+                    Log.w(TAG, "[InstVM] pollUntilStable — fetch failed (will retry): ${e.message}")
+                    continue
                 }
                 val current = _uiState.value as? UiState.Success ?: break
                 _uiState.value = UiState.Success(

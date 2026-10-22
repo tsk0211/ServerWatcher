@@ -20,7 +20,6 @@ import dev.tsk.server.watcher.core.domain.repository.IRoute53Repository
 import dev.tsk.server.watcher.core.domain.repository.ISubdomainRepository
 import dev.tsk.server.watcher.core.domain.usecase.ManageDomainUseCase
 import dev.tsk.server.watcher.core.domain.usecase.ObserveDomainStatusUseCase
-import dev.tsk.server.watcher.core.domain.usecase.PushInstanceConfigUseCase
 import dev.tsk.server.watcher.core.domain.usecase.StartInstanceUseCase
 import dev.tsk.server.watcher.core.domain.usecase.StopInstanceUseCase
 import dev.tsk.server.watcher.core.domain.usecase.UpdateDnsRecordUseCase
@@ -28,6 +27,7 @@ import dev.tsk.server.watcher.ui.components.ToastManager
 import dev.tsk.server.watcher.ui.components.ToastType
 import dev.tsk.server.watcher.ui.components.UiState
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -74,7 +74,6 @@ class DomainDetailViewModel @Inject constructor(
     private val instanceConfigRepository: IInstanceConfigRepository,
     private val ec2Repository: IEc2Repository,
     private val route53Repository: IRoute53Repository,
-    private val pushInstanceConfig: PushInstanceConfigUseCase,
     private val observeDomainStatus: ObserveDomainStatusUseCase,
     private val startInstance: StartInstanceUseCase,
     private val stopInstance: StopInstanceUseCase,
@@ -220,13 +219,65 @@ class DomainDetailViewModel @Inject constructor(
     fun toggleInstanceSwitch(instanceId: String, region: String, newState: Boolean) {
         viewModelScope.launch {
             Log.d(TAG, "[DetailVM] toggleInstance id=$instanceId region=$region newState=$newState")
+
+            // Immediately show transitional state — don't wait for the next poll cycle
+            val rowId = (_uiState.value as? UiState.Success)?.data?.sections
+                ?.flatMap { it.instances }
+                ?.firstOrNull { it.instanceId == instanceId }
+                ?.id
+            val optimisticState = if (newState) Ec2State.PENDING else Ec2State.STOPPING
+            if (rowId != null) {
+                statusMapFlow.value = statusMapFlow.value + (rowId to (optimisticState to HealthStatus.Unknown))
+            }
+
+            val isPrimary = (_uiState.value as? UiState.Success)?.data?.sections
+                ?.flatMap { it.instances }
+                ?.firstOrNull { it.instanceId == instanceId }
+                ?.isPrimary == true
+
             val result = if (newState) startInstance(instanceId, region) else stopInstance(instanceId, region)
             result
-                .onSuccess { Log.d(TAG, "[DetailVM] toggleInstance SUCCESS") }
+                .onSuccess {
+                    Log.d(TAG, "[DetailVM] toggleInstance SUCCESS isPrimary=$isPrimary")
+                    if (newState && isPrimary && rowId != null) {
+                        awaitRunningAndUpdateDns(rowId, instanceId, region)
+                    }
+                }
                 .onFailure { e ->
                     Log.e(TAG, "[DetailVM] toggleInstance FAILED: ${e.message}", e)
+                    // Roll back the optimistic update so the next poll restores the real state
+                    if (rowId != null) {
+                        statusMapFlow.value = statusMapFlow.value - rowId
+                    }
                     toastManager.showToast("Failed to ${if (newState) "start" else "stop"} instance: ${e.message}", ToastType.ERROR)
                 }
+        }
+    }
+
+    private fun awaitRunningAndUpdateDns(instanceRowId: String, ec2InstanceId: String, region: String) {
+        viewModelScope.launch {
+            Log.d(TAG, "[DetailVM] awaitRunningAndUpdateDns rowId=$instanceRowId ec2=$ec2InstanceId")
+            repeat(30) {
+                delay(3_000L)
+                val state = runCatching { ec2Repository.getState(ec2InstanceId, region) }.getOrNull()
+                    ?: return@repeat
+                if (state == Ec2State.RUNNING) {
+                    val ip = runCatching { ec2Repository.getPublicIp(ec2InstanceId, region) }.getOrNull()
+                        ?: return@repeat
+                    Log.d(TAG, "[DetailVM] primary reached RUNNING ip=$ip — updating DNS")
+                    updateDnsRecord(instanceRowId, ip)
+                        .onSuccess {
+                            Log.d(TAG, "[DetailVM] auto DNS update SUCCESS")
+                            toastManager.showToast("DNS A record updated", ToastType.SUCCESS)
+                        }
+                        .onFailure { e ->
+                            Log.w(TAG, "[DetailVM] auto DNS update failed: ${e.message}")
+                            toastManager.showToast("DNS update failed: ${e.message}", ToastType.ERROR)
+                        }
+                    return@launch
+                }
+                if (!state.isTransitional) return@launch
+            }
         }
     }
 
@@ -409,18 +460,21 @@ class DomainDetailViewModel @Inject constructor(
                             ?.let { hzId -> _hostedZones.value.firstOrNull { it.id == hzId }?.name }
                             ?: domain?.name
                             ?: ""
-                        instanceConfigRepository.insert(
-                            InstanceConfig(
-                                id = UUID.randomUUID().toString(),
-                                instanceId = rowId,
-                                key = "SW_DOMAIN",
-                                value = swDomain,
+                        val ec2Id = instanceId.trim()
+                        val alreadyHasDomain = instanceConfigRepository.getByInstance(ec2Id)
+                            .any { it.key == "SW_DOMAIN" }
+                        if (!alreadyHasDomain) {
+                            instanceConfigRepository.insert(
+                                InstanceConfig(
+                                    id = UUID.randomUUID().toString(),
+                                    instanceId = ec2Id,
+                                    key = "SW_DOMAIN",
+                                    value = swDomain,
+                                )
                             )
-                        )
-                        pushInstanceConfig(rowId, instanceId.trim(), region.trim())
+                        }
                     }.onFailure { e ->
-                        Log.w(TAG, "[DetailVM] auto-push config failed (non-fatal): ${e.message}", e)
-                        toastManager.showToast("Auto-push failed — use Push Config after stopping instance", ToastType.WARNING)
+                        Log.w(TAG, "[DetailVM] config seed failed (non-fatal): ${e.message}", e)
                     }
                 }
                 .onFailure { e ->
