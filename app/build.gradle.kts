@@ -51,6 +51,11 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        // android.util.Log is called throughout; return defaults instead of throwing in JVM tests.
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
