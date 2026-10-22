@@ -220,7 +220,8 @@ private fun DomainCard(
             Switch(
                 checked = domain.isMasterOn,
                 onCheckedChange = onToggle,
-                enabled = domain.status != DomainStatus.TRANSITIONING,
+                // Don't let the user flip a switch whose state we haven't confirmed yet.
+                enabled = domain.statusLoaded && domain.status != DomainStatus.TRANSITIONING,
             )
         }
     }
@@ -252,12 +253,13 @@ private fun statusColor(status: DomainStatus): Color = when (status) {
 }
 
 private fun statusLabel(domain: DomainUiModel): String = when {
+    !domain.statusLoaded                         -> "Checking…"
     domain.instanceCount == 0                    -> "No instances"
     domain.status == DomainStatus.ALL_RUNNING    -> "All running (${domain.runningCount})"
     domain.status == DomainStatus.ALL_STOPPED    -> "All stopped"
     domain.status == DomainStatus.TRANSITIONING  -> "Transitioning…"
     domain.status == DomainStatus.MIXED          -> "${domain.runningCount}/${domain.instanceCount} running"
-    else -> "Unknown"
+    else -> "Status unavailable"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

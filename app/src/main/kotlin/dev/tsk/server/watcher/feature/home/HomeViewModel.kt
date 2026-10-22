@@ -41,7 +41,25 @@ data class DomainUiModel(
     val instanceCount: Int = 0,
     val runningCount: Int = 0,
     val status: DomainStatus = DomainStatus.UNKNOWN,
+    /** False until the first status poll for this domain has finished. */
+    val statusLoaded: Boolean = false,
 )
+
+/**
+ * Summarises the EC2 states of a domain's instances.
+ *
+ * A state we could not read ([Ec2State.UNKNOWN] — network error, expired token, missing permission)
+ * is *not* "stopped". Counting it as not-running made a live domain show "All stopped" whenever a
+ * poll failed, so any unknown state makes the whole summary UNKNOWN instead.
+ */
+internal fun aggregateDomainStatus(states: List<Ec2State>): DomainStatus = when {
+    states.isEmpty() -> DomainStatus.UNKNOWN
+    states.any { it.isTransitional } -> DomainStatus.TRANSITIONING
+    states.any { it == Ec2State.UNKNOWN } -> DomainStatus.UNKNOWN
+    states.all { it == Ec2State.RUNNING } -> DomainStatus.ALL_RUNNING
+    states.none { it == Ec2State.RUNNING } -> DomainStatus.ALL_STOPPED
+    else -> DomainStatus.MIXED
+}
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
@@ -115,18 +133,7 @@ class HomeViewModel @Inject constructor(
                 .onEach { statuses ->
                     val total = statuses.size
                     val running = statuses.count { it.ec2State == Ec2State.RUNNING }
-                    val transitioning = statuses.any {
-                        it.ec2State == Ec2State.PENDING ||
-                        it.ec2State == Ec2State.STOPPING ||
-                        it.ec2State == Ec2State.SHUTTING_DOWN
-                    }
-                    val newStatus = when {
-                        total == 0       -> DomainStatus.UNKNOWN
-                        transitioning    -> DomainStatus.TRANSITIONING
-                        running == total -> DomainStatus.ALL_RUNNING
-                        running == 0     -> DomainStatus.ALL_STOPPED
-                        else             -> DomainStatus.MIXED
-                    }
+                    val newStatus = aggregateDomainStatus(statuses.map { it.ec2State })
                     Log.d(TAG, "[HomeVM] poll domain=${domain.name} total=$total running=$running status=$newStatus")
 
                     val current = _uiState.value
@@ -136,10 +143,16 @@ class HomeViewModel @Inject constructor(
                                 val masterOn = when (newStatus) {
                                     DomainStatus.ALL_RUNNING, DomainStatus.MIXED -> true
                                     DomainStatus.ALL_STOPPED                     -> false
-                                    DomainStatus.TRANSITIONING                   -> uiModel.isMasterOn
-                                    DomainStatus.UNKNOWN                         -> uiModel.isMasterOn
+                                    // Not enough information to say — keep what we had.
+                                    DomainStatus.TRANSITIONING, DomainStatus.UNKNOWN -> uiModel.isMasterOn
                                 }
-                                uiModel.copy(instanceCount = total, runningCount = running, status = newStatus, isMasterOn = masterOn)
+                                uiModel.copy(
+                                    instanceCount = total,
+                                    runningCount = running,
+                                    status = newStatus,
+                                    isMasterOn = masterOn,
+                                    statusLoaded = true,
+                                )
                             } else uiModel
                         })
                     }
@@ -159,6 +172,7 @@ class HomeViewModel @Inject constructor(
                 instanceCount = current?.instanceCount ?: 0,
                 runningCount = current?.runningCount ?: 0,
                 status = current?.status ?: DomainStatus.UNKNOWN,
+                statusLoaded = current?.statusLoaded ?: false,
             )
         }
 
