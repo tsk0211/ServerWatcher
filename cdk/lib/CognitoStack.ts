@@ -74,17 +74,17 @@ export class CognitoStack extends Construct {
       ),
     });
 
-    // EC2 permissions for authenticated users
+    // EC2 mutations — only on instances tagged ManagedBy=ServerWatcher.
+    // ModifyInstanceAttribute is used to push env config as user data.
     this.authenticatedRole.addToPolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: [
-          'ec2:DescribeInstances',
           'ec2:StartInstances',
           'ec2:StopInstances',
-          'ec2:DescribeInstanceStatus',
+          'ec2:ModifyInstanceAttribute',
         ],
-        resources: ['*'],
+        resources: [`arn:${cdk.Aws.PARTITION}:ec2:*:${cdk.Aws.ACCOUNT_ID}:instance/*`],
         conditions: {
           StringEquals: {
             'ec2:ResourceTag/ManagedBy': 'ServerWatcher',
@@ -93,12 +93,35 @@ export class CognitoStack extends Construct {
       }),
     );
 
-    // Allow describe without tag condition
+    // EC2 describe calls do not support resource-level permissions, so they need '*'.
     this.authenticatedRole.addToPolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: ['ec2:DescribeInstances', 'ec2:DescribeInstanceStatus'],
         resources: ['*'],
+      }),
+    );
+
+    // Route 53 — list zones (no resource-level support) and upsert A records.
+    // Scope record changes to specific zones with:  cdk deploy -c hostedZoneIds=Z123,Z456
+    const hostedZoneIds = String(this.node.tryGetContext('hostedZoneIds') ?? '*')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
+
+    this.authenticatedRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['route53:ListHostedZones'],
+        resources: ['*'],
+      }),
+    );
+
+    this.authenticatedRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['route53:ChangeResourceRecordSets'],
+        resources: hostedZoneIds.map((id) => `arn:${cdk.Aws.PARTITION}:route53:::hostedzone/${id}`),
       }),
     );
 
