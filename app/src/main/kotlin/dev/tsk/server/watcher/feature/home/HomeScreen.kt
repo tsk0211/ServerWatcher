@@ -1,7 +1,14 @@
 package dev.tsk.server.watcher.feature.home
 
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,38 +21,24 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.painterResource
-import dev.tsk.server.watcher.R
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.MenuAnchorType
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -60,20 +53,37 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.tsk.server.watcher.R
 import dev.tsk.server.watcher.core.domain.model.HostedZoneSummary
 import dev.tsk.server.watcher.ui.components.ConfirmationDialog
 import dev.tsk.server.watcher.ui.components.ErrorState
 import dev.tsk.server.watcher.ui.components.UiState
+import dev.tsk.server.watcher.ui.design.AppBackground
+import dev.tsk.server.watcher.ui.design.IconBadge
 import dev.tsk.server.watcher.ui.design.LogoText
-import dev.tsk.server.watcher.ui.theme.StateError
+import dev.tsk.server.watcher.ui.design.SectionLabel
+import dev.tsk.server.watcher.ui.design.SheetHeader
+import dev.tsk.server.watcher.ui.design.SkeletonList
+import dev.tsk.server.watcher.ui.design.StatTile
+import dev.tsk.server.watcher.ui.design.StatusOrb
+import dev.tsk.server.watcher.ui.design.SwButton
+import dev.tsk.server.watcher.ui.design.SwCard
+import dev.tsk.server.watcher.ui.design.SwTextField
+import dev.tsk.server.watcher.ui.design.readable
+import dev.tsk.server.watcher.ui.design.transparentTopBarColors
 import dev.tsk.server.watcher.ui.theme.StatePending
 import dev.tsk.server.watcher.ui.theme.StateRunning
+import dev.tsk.server.watcher.ui.theme.StateStopped
 import dev.tsk.server.watcher.ui.theme.StateUnknown
+import dev.tsk.server.watcher.ui.theme.sw
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -102,70 +112,94 @@ fun HomeScreen(
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(
-                            painter = painterResource(R.mipmap.ic_launcher_round),
-                            contentDescription = null,
+    AppBackground {
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onBackground,
+            topBar = {
+                TopAppBar(
+                    colors = transparentTopBarColors(),
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Image(
+                                painter = painterResource(R.mipmap.ic_launcher_round),
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), CircleShape),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            LogoText(inline = true)
+                        }
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = onSettingsClick,
                             modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape),
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        LogoText()
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onSettingsClick) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
-                },
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showAddSheet = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Add Domain")
-            }
-        },
-    ) { padding ->
-        AnimatedContent(
-            targetState = uiState,
-            contentKey = { it::class },
-            transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) },
-            label = "homeContent",
-            modifier = Modifier.fillMaxSize(),
-        ) { state ->
-            when (state) {
-                is UiState.Loading -> Box(
-                    modifier = Modifier.fillMaxSize().padding(padding),
-                    contentAlignment = Alignment.Center,
-                ) { CircularProgressIndicator() }
-
-                is UiState.Error -> ErrorState(
-                    message = state.message,
-                    onRetry = viewModel::retry,
-                    modifier = Modifier.padding(padding),
+                                .padding(end = 8.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                        ) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        }
+                    },
                 )
+            },
+            floatingActionButton = {
+                ExtendedFloatingActionButton(
+                    onClick = { showAddSheet = true },
+                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    text = { Text("Add domain", fontWeight = FontWeight.SemiBold) },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = MaterialTheme.shapes.large,
+                )
+            },
+        ) { padding ->
+            AnimatedContent(
+                targetState = uiState,
+                contentKey = { it::class },
+                transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(150)) },
+                label = "homeContent",
+                modifier = Modifier.fillMaxSize(),
+            ) { state ->
+                when (state) {
+                    is UiState.Loading -> SkeletonList(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding)
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
 
-                is UiState.Success -> LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    item { Spacer(Modifier.height(8.dp)) }
-                    items(state.data, key = { it.domainId }) { domain ->
-                        DomainCard(
-                            domain = domain,
-                            onToggle = { newState -> pendingToggle = domain.domainId to newState },
-                            onClick = { onDomainClick(domain.domainId) },
-                        )
+                    is UiState.Error -> ErrorState(
+                        message = state.message,
+                        onRetry = viewModel::retry,
+                        modifier = Modifier.padding(padding),
+                    )
+
+                    is UiState.Success -> LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding)
+                            .padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        if (state.data.isEmpty()) {
+                            item { EmptyDomains(onAdd = { showAddSheet = true }) }
+                        } else {
+                            item { Overview(state.data) }
+                            item { SectionLabel("Your domains", Modifier.padding(start = 4.dp, top = 6.dp)) }
+                            items(state.data, key = { it.domainId }) { domain ->
+                                DomainCard(
+                                    domain = domain,
+                                    onToggle = { newState -> pendingToggle = domain.domainId to newState },
+                                    onClick = { onDomainClick(domain.domainId) },
+                                )
+                            }
+                        }
+                        item { Spacer(Modifier.height(96.dp)) }
                     }
-                    item { Spacer(Modifier.height(80.dp)) }
                 }
             }
         }
@@ -190,63 +224,139 @@ fun HomeScreen(
     }
 }
 
+/** Three headline numbers across all domains, so the state of everything is visible before scrolling. */
+@Composable
+private fun Overview(domains: List<DomainUiModel>) {
+    val sw = MaterialTheme.sw
+    val loaded = domains.filter { it.statusLoaded }
+    val up = loaded.sumOf { it.runningCount }
+    val total = loaded.sumOf { it.instanceCount }
+    val attention = loaded.count {
+        it.status == DomainStatus.MIXED || it.status == DomainStatus.TRANSITIONING || it.status == DomainStatus.UNKNOWN
+    }
+    val allLoaded = loaded.size == domains.size
+
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+        StatTile("${domains.size}", "Domains", sw.info, Modifier.weight(1f))
+        StatTile(if (allLoaded) "$up/$total" else "…", "Instances up", sw.success, Modifier.weight(1f))
+        StatTile(
+            value = if (allLoaded) "$attention" else "…",
+            label = "Need attention",
+            color = if (allLoaded && attention > 0) sw.warning else StateStopped,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun EmptyDomains(onAdd: () -> Unit) {
+    SwCard(modifier = Modifier.fillMaxWidth().padding(top = 24.dp), accent = MaterialTheme.colorScheme.primary) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            IconBadge(Icons.Default.Language, MaterialTheme.colorScheme.primary, size = 64.dp)
+            Text("No domains yet", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Add a domain, then group the EC2 instances behind it into subdomains. One switch will start or stop the whole environment.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(4.dp))
+            SwButton(text = "Add your first domain", onClick = onAdd, icon = Icons.Default.Add, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
 @Composable
 private fun DomainCard(
     domain: DomainUiModel,
     onToggle: (Boolean) -> Unit,
     onClick: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    val color = statusColor(domain.status)
+    // A stopped or unreadable domain stays neutral; only live or changing ones glow.
+    val glows = domain.statusLoaded &&
+        (domain.status == DomainStatus.ALL_RUNNING || domain.status == DomainStatus.MIXED || domain.status == DomainStatus.TRANSITIONING)
+
+    SwCard(
+        modifier = Modifier.fillMaxWidth(),
+        accent = if (glows) color else null,
+        onClick = onClick,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            StatusDot(status = domain.status, modifier = Modifier.padding(end = 12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(domain.domainName, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(
-                    text = statusLabel(domain),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = statusColor(domain.status),
-                    fontWeight = FontWeight.Medium,
+        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusOrb(
+                    color = color,
+                    size = 12.dp,
+                    pulse = domain.statusLoaded && (domain.status == DomainStatus.ALL_RUNNING || domain.status == DomainStatus.TRANSITIONING),
+                )
+                Spacer(Modifier.width(6.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        domain.domainName,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = statusLabel(domain),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = color.readable(),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Switch(
+                    checked = domain.isMasterOn,
+                    onCheckedChange = onToggle,
+                    // Don't let the user flip a switch whose state we haven't confirmed yet.
+                    enabled = domain.statusLoaded && domain.status != DomainStatus.TRANSITIONING,
                 )
             }
-            Switch(
-                checked = domain.isMasterOn,
-                onCheckedChange = onToggle,
-                // Don't let the user flip a switch whose state we haven't confirmed yet.
-                enabled = domain.statusLoaded && domain.status != DomainStatus.TRANSITIONING,
-            )
+            if (domain.statusLoaded && domain.instanceCount > 0) {
+                InstanceMeter(running = domain.runningCount, total = domain.instanceCount, color = color, region = domain.region)
+            }
         }
     }
 }
 
+/** Thin bar showing how many of a domain's instances are up, with the region on the right. */
 @Composable
-private fun StatusDot(status: DomainStatus, modifier: Modifier = Modifier) {
-    val color = statusColor(status)
-    if (status == DomainStatus.ALL_RUNNING) {
-        val infiniteTransition = rememberInfiniteTransition(label = "dotPulse")
-        val alpha by infiniteTransition.animateFloat(
-            initialValue = 1f,
-            targetValue = 0.35f,
-            animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
-            label = "dotAlpha",
+private fun InstanceMeter(running: Int, total: Int, color: Color, region: String) {
+    val fraction by animateFloatAsState(
+        targetValue = running.toFloat() / total,
+        animationSpec = tween(600),
+        label = "meter",
+    )
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .height(6.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction)
+                    .height(6.dp)
+                    .clip(CircleShape)
+                    .background(color),
+            )
+        }
+        Text(
+            text = "$running/$total up · $region",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Canvas(modifier = modifier.size(12.dp)) { drawCircle(color = color.copy(alpha = alpha)) }
-    } else {
-        Canvas(modifier = modifier.size(12.dp)) { drawCircle(color = color) }
     }
 }
 
 private fun statusColor(status: DomainStatus): Color = when (status) {
     DomainStatus.ALL_RUNNING   -> StateRunning
-    DomainStatus.ALL_STOPPED   -> StateError
+    // Stopped is a deliberate state, not an error, so it is neutral rather than red.
+    DomainStatus.ALL_STOPPED   -> StateStopped
     DomainStatus.TRANSITIONING -> StatePending
     DomainStatus.MIXED         -> StatePending
     DomainStatus.UNKNOWN       -> StateUnknown
@@ -276,16 +386,23 @@ private fun AddDomainSheet(
     var manualZoneId by remember { mutableStateOf("") }
 
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Add Domain", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        OutlinedTextField(
+        SheetHeader(
+            icon = Icons.Default.Language,
+            title = "Add domain",
+            subtitle = "Instances are grouped under a domain, then subdomains",
+        )
+        SwTextField(
             value = name, onValueChange = { name = it },
             label = { Text("Domain Name") }, placeholder = { Text("e.g. mauli.store") },
             modifier = Modifier.fillMaxWidth(), singleLine = true,
         )
-        OutlinedTextField(
+        SwTextField(
             value = region, onValueChange = { region = it },
             label = { Text("AWS Region") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
         )
@@ -294,7 +411,7 @@ private fun AddDomainSheet(
                 expanded = zoneDropdownExpanded,
                 onExpandedChange = { zoneDropdownExpanded = it },
             ) {
-                OutlinedTextField(
+                SwTextField(
                     value = selectedZone?.name ?: "None",
                     onValueChange = {},
                     readOnly = true,
@@ -319,22 +436,28 @@ private fun AddDomainSheet(
                 }
             }
         } else {
-            OutlinedTextField(
+            SwTextField(
                 value = manualZoneId, onValueChange = { manualZoneId = it },
                 label = { Text("Hosted Zone ID (optional)") },
                 placeholder = { Text("Z0000000000000000000") },
                 modifier = Modifier.fillMaxWidth(), singleLine = true,
             )
         }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        val effectiveZoneId = if (hostedZones.isNotEmpty()) selectedZone?.id else manualZoneId.ifBlank { null }
+        val effectiveZoneName = if (hostedZones.isNotEmpty()) selectedZone?.name else null
+        val canAdd = name.isNotBlank() && region.isNotBlank()
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             TextButton(onClick = onDismiss) { Text("Cancel") }
-            Spacer(Modifier.width(8.dp))
-            val effectiveZoneId = if (hostedZones.isNotEmpty()) selectedZone?.id else manualZoneId.ifBlank { null }
-            val effectiveZoneName = if (hostedZones.isNotEmpty()) selectedZone?.name else null
-            TextButton(
-                onClick = { if (name.isNotBlank() && region.isNotBlank()) onAdd(name, region, effectiveZoneId, effectiveZoneName) },
-                enabled = name.isNotBlank() && region.isNotBlank(),
-            ) { Text("Add", fontWeight = FontWeight.SemiBold) }
+            SwButton(
+                text = "Add domain",
+                onClick = { if (canAdd) onAdd(name, region, effectiveZoneId, effectiveZoneName) },
+                enabled = canAdd,
+                modifier = Modifier.weight(1f),
+            )
         }
         Spacer(Modifier.height(16.dp))
     }

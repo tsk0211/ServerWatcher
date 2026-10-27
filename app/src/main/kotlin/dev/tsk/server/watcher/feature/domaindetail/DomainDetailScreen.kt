@@ -79,18 +79,49 @@ import dev.tsk.server.watcher.ui.components.ErrorState
 import dev.tsk.server.watcher.ui.components.UiState
 import dev.tsk.server.watcher.ui.design.Ec2StateChip
 import dev.tsk.server.watcher.ui.design.ShimmerChip
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.Surface
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import dev.tsk.server.watcher.ui.design.AppBackground
+import dev.tsk.server.watcher.ui.design.HealthStatusChip
+import dev.tsk.server.watcher.ui.design.IconBadge
+import dev.tsk.server.watcher.ui.design.SheetHeader
+import dev.tsk.server.watcher.ui.design.SkeletonList
+import dev.tsk.server.watcher.ui.design.StatusOrb
+import dev.tsk.server.watcher.ui.design.SwButton
+import dev.tsk.server.watcher.ui.design.SwCard
+import dev.tsk.server.watcher.ui.design.SwTextField
+import dev.tsk.server.watcher.ui.design.TonalIconButton
+import dev.tsk.server.watcher.ui.design.readable
+import dev.tsk.server.watcher.ui.design.transparentTopBarColors
+import dev.tsk.server.watcher.ui.theme.StatePending
+import dev.tsk.server.watcher.ui.theme.StateRunning
+import dev.tsk.server.watcher.ui.theme.StateStopped
+import dev.tsk.server.watcher.ui.theme.StateUnknown
+import dev.tsk.server.watcher.ui.theme.sw
 import kotlinx.coroutines.launch
 
-// Subtle tinted card backgrounds for health status in dark theme
-private val HealthyCardColor = Color(0xFF143020)
-private val UnhealthyCardColor = Color(0xFF301414)
-
-private fun subdomainCardColor(instances: List<InstanceRowUiModel>): Color? = when {
-    instances.any { it.healthStatus is HealthStatus.Unhealthy || it.healthStatus is HealthStatus.Error } ->
-        UnhealthyCardColor
-    instances.any { it.healthStatus is HealthStatus.Healthy } ->
-        HealthyCardColor
-    else -> null
+/** Glow color for a subdomain card: red if any instance fails its health check, green if one passes. */
+@Composable
+private fun subdomainAccent(instances: List<InstanceRowUiModel>): Color? {
+    val sw = MaterialTheme.sw
+    return when {
+        instances.any { it.healthStatus is HealthStatus.Unhealthy || it.healthStatus is HealthStatus.Error } -> sw.danger
+        instances.any { it.healthStatus is HealthStatus.Healthy } -> sw.success
+        else -> null
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -203,18 +234,22 @@ fun DomainDetailScreen(
 
     val screenTitle = (uiState as? UiState.Success)?.data?.domainName?.ifEmpty { "Domain" } ?: "Domain"
 
+    AppBackground {
     Scaffold(
+        containerColor = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             TopAppBar(
-                title = { Text(screenTitle) },
+                colors = transparentTopBarColors(),
+                title = { Text(screenTitle, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    TonalIconButton(onClick = onBack, modifier = Modifier.padding(start = 8.dp)) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    Box {
-                        IconButton(onClick = { showDomainMenu = true }) {
+                    Box(modifier = Modifier.padding(end = 8.dp)) {
+                        TonalIconButton(onClick = { showDomainMenu = true }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "Domain actions")
                         }
                         DropdownMenu(
@@ -242,9 +277,14 @@ fun DomainDetailScreen(
         },
         floatingActionButton = {
             if (uiState is UiState.Success) {
-                FloatingActionButton(onClick = { showAddSubdomainSheet = true }) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Subdomain")
-                }
+                ExtendedFloatingActionButton(
+                    onClick = { showAddSubdomainSheet = true },
+                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    text = { Text("Add subdomain", fontWeight = FontWeight.SemiBold) },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = MaterialTheme.shapes.large,
+                )
             }
         },
     ) { padding ->
@@ -256,10 +296,12 @@ fun DomainDetailScreen(
             modifier = Modifier.fillMaxSize(),
         ) { state ->
             when (state) {
-                is UiState.Loading -> Box(
-                    modifier = Modifier.fillMaxSize().padding(padding),
-                    contentAlignment = Alignment.Center,
-                ) { CircularProgressIndicator() }
+                is UiState.Loading -> SkeletonList(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                )
 
                 is UiState.Error -> ErrorState(
                     message = state.message,
@@ -274,7 +316,10 @@ fun DomainDetailScreen(
                         .padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    item { Spacer(Modifier.height(8.dp)) }
+                    item { DomainSummary(state.data) }
+                    if (state.data.sections.isEmpty()) {
+                        item { EmptySubdomains(onAdd = { showAddSubdomainSheet = true }) }
+                    }
                     itemsIndexed(state.data.sections, key = { _, s -> s.subdomain.id }) { index, section ->
                         var visible by remember(section.subdomain.id) { mutableStateOf(false) }
                         LaunchedEffect(section.subdomain.id) {
@@ -305,10 +350,11 @@ fun DomainDetailScreen(
                             )
                         }
                     }
-                    item { Spacer(Modifier.height(80.dp)) }
+                    item { Spacer(Modifier.height(96.dp)) }
                 }
             }
         }
+    }
     }
 
     if (showAddSubdomainSheet) {
@@ -345,6 +391,90 @@ fun DomainDetailScreen(
     }
 }
 
+/** Hero card at the top of the screen: how much of this domain is up, plus its region and DNS zone. */
+@Composable
+private fun DomainSummary(data: DomainDetailData) {
+    val instances = data.sections.flatMap { it.instances }
+    val running = instances.count { it.ec2State == Ec2State.RUNNING }
+    val total = instances.size
+    val transitioning = instances.any { it.ec2State.isTransitional }
+    val sw = MaterialTheme.sw
+
+    val (color, headline) = when {
+        !data.isStatusLoaded -> StateUnknown to "Checking status…"
+        total == 0 -> StateStopped to "No instances yet"
+        transitioning -> StatePending to "Changing state…"
+        running == total -> StateRunning to "All $total running"
+        running == 0 -> StateStopped to "All $total stopped"
+        else -> StatePending to "$running of $total running"
+    }
+    val live = data.isStatusLoaded && running > 0
+
+    SwCard(modifier = Modifier.fillMaxWidth(), accent = if (live || transitioning) color else null) {
+        Column(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusOrb(color = color, size = 12.dp, pulse = data.isStatusLoaded && (running == total && total > 0 || transitioning))
+                Spacer(Modifier.width(6.dp))
+                Column {
+                    Text(headline, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "${data.sections.size} ${if (data.sections.size == 1) "subdomain" else "subdomains"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                InfoPill(Icons.Default.Public, data.domainRegion.ifBlank { "No region" }, sw.info)
+                InfoPill(
+                    Icons.Default.Dns,
+                    data.hostedZoneName ?: "No DNS zone",
+                    if (data.hostedZoneName != null) sw.success else StateStopped,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun InfoPill(icon: ImageVector, text: String, tint: Color) {
+    Row(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(tint.copy(alpha = 0.12f))
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = tint.readable(), modifier = Modifier.size(14.dp))
+        Text(text, style = MaterialTheme.typography.labelMedium, color = tint.readable(), fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun EmptySubdomains(onAdd: () -> Unit) {
+    SwCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            IconBadge(Icons.Default.Dns, MaterialTheme.colorScheme.primary, size = 56.dp)
+            Text("No subdomains yet", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                "A subdomain points at one or more EC2 instances and can run a health check against them.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            SwButton(text = "Add subdomain", onClick = onAdd, icon = Icons.Default.Add, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
 @Composable
 private fun SubdomainSection(
     section: SubdomainSectionUiModel,
@@ -365,77 +495,89 @@ private fun SubdomainSection(
         hostedZoneName != null -> "${subdomain.prefix}.$hostedZoneName"
         else -> subdomain.prefix
     }
+    val hasHealthCheck = subdomain.healthPath.isNotBlank()
 
-    val containerColor = subdomainCardColor(section.instances)
-        ?: MaterialTheme.colorScheme.surfaceVariant
-
-    Card(
-        colors = CardDefaults.cardColors(containerColor = containerColor),
-        elevation = CardDefaults.cardElevation(2.dp),
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            var showSubdomainMenu by remember { mutableStateOf(false) }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(urlDisplay, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    if (subdomain.healthPath.isNotBlank()) {
-                        Text(
-                            text = "Health: ${subdomain.healthPath} · ${subdomain.healthRangeStart}-${subdomain.healthRangeEnd} · every ${subdomain.healthIntervalSeconds}s",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Box {
-                    IconButton(onClick = { showSubdomainMenu = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Subdomain actions")
-                    }
-                    DropdownMenu(
-                        expanded = showSubdomainMenu,
-                        onDismissRequest = { showSubdomainMenu = false },
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Edit Subdomain") },
-                            onClick = {
-                                showSubdomainMenu = false
-                                onEditSubdomain()
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Delete Subdomain") },
-                            onClick = {
-                                showSubdomainMenu = false
-                                onDeleteSubdomain()
-                            },
-                        )
-                    }
-                }
-            }
-
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-
-            section.instances.forEach { instance ->
-                InstanceRow(
-                    instance = instance,
-                    isStatusLoaded = isStatusLoaded,
-                    onToggle = { newState -> onToggleInstance(instance.instanceId, instance.region, newState) },
-                    onDelete = { onDeleteInstance(instance.id) },
-                    onEdit = { onEditInstance(instance) },
-                    onClick = { onInstanceClick(instance.id) },
-                    onSetPrimary = { onSetPrimaryInstance(instance.id) },
+    SwCard(modifier = Modifier.fillMaxWidth(), accent = subdomainAccent(section.instances)) {
+        var showSubdomainMenu by remember { mutableStateOf(false) }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 14.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconBadge(
+                icon = if (subdomain.isApex) Icons.Default.Public else Icons.Default.Language,
+                tint = MaterialTheme.colorScheme.secondary,
+                size = 40.dp,
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    urlDisplay,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = if (hasHealthCheck) {
+                        "${subdomain.healthPath} · ${subdomain.healthRangeStart}–${subdomain.healthRangeEnd} · every ${subdomain.healthIntervalSeconds}s"
+                    } else {
+                        "No health check"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-
-            TextButton(
-                onClick = onAddInstance,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
-                Text("Add EC2 Instance", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+            Box {
+                IconButton(onClick = { showSubdomainMenu = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Subdomain actions")
+                }
+                DropdownMenu(
+                    expanded = showSubdomainMenu,
+                    onDismissRequest = { showSubdomainMenu = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Edit Subdomain") },
+                        leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
+                        onClick = {
+                            showSubdomainMenu = false
+                            onEditSubdomain()
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete Subdomain", color = MaterialTheme.colorScheme.error) },
+                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            showSubdomainMenu = false
+                            onDeleteSubdomain()
+                        },
+                    )
+                }
             }
+        }
+
+        section.instances.forEach { instance ->
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+            )
+            InstanceRow(
+                instance = instance,
+                isStatusLoaded = isStatusLoaded,
+                showHealth = hasHealthCheck,
+                onToggle = { newState -> onToggleInstance(instance.instanceId, instance.region, newState) },
+                onDelete = { onDeleteInstance(instance.id) },
+                onEdit = { onEditInstance(instance) },
+                onClick = { onInstanceClick(instance.id) },
+                onSetPrimary = { onSetPrimaryInstance(instance.id) },
+            )
+        }
+
+        TextButton(
+            onClick = onAddInstance,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+        ) {
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.padding(end = 6.dp).size(18.dp))
+            Text("Add EC2 instance", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -444,6 +586,7 @@ private fun SubdomainSection(
 private fun InstanceRow(
     instance: InstanceRowUiModel,
     isStatusLoaded: Boolean,
+    showHealth: Boolean,
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
@@ -451,26 +594,43 @@ private fun InstanceRow(
     onSetPrimary: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(instance.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                Text(
+                    instance.label,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
                 if (instance.isPrimary) {
                     Icon(
                         Icons.Default.Star,
                         contentDescription = "Primary",
-                        modifier = Modifier.padding(start = 4.dp).size(14.dp),
-                        tint = Color(0xFFFFD180),
+                        modifier = Modifier.padding(start = 6.dp).size(15.dp),
+                        tint = MaterialTheme.sw.star,
                     )
                 }
             }
-            Text(instance.instanceId, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (!isStatusLoaded && instance.ec2State == Ec2State.UNKNOWN) {
-                ShimmerChip()
-            } else {
-                Ec2StateChip(instance.ec2State)
+            Text(
+                instance.instanceId,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (!isStatusLoaded && instance.ec2State == Ec2State.UNKNOWN) {
+                    ShimmerChip()
+                } else {
+                    Ec2StateChip(instance.ec2State)
+                    if (showHealth && instance.ec2State == Ec2State.RUNNING && instance.healthStatus !is HealthStatus.Unknown) {
+                        HealthStatusChip(instance.healthStatus)
+                    }
+                }
             }
         }
         Switch(checked = instance.ec2State.isOn, onCheckedChange = onToggle)
@@ -485,6 +645,7 @@ private fun InstanceRow(
             ) {
                 DropdownMenuItem(
                     text = { Text("Edit Instance") },
+                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
                     onClick = {
                         showInstanceMenu = false
                         onEdit()
@@ -493,6 +654,7 @@ private fun InstanceRow(
                 if (!instance.isPrimary) {
                     DropdownMenuItem(
                         text = { Text("Set as Primary") },
+                        leadingIcon = { Icon(Icons.Default.Star, contentDescription = null) },
                         onClick = {
                             showInstanceMenu = false
                             onSetPrimary()
@@ -500,12 +662,45 @@ private fun InstanceRow(
                     )
                 }
                 DropdownMenuItem(
-                    text = { Text("Delete Instance") },
+                    text = { Text("Delete Instance", color = MaterialTheme.colorScheme.error) },
+                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                     onClick = {
                         showInstanceMenu = false
                         onDelete()
                     },
                 )
+            }
+        }
+    }
+}
+
+/** Segmented picker for the health-check poll interval. */
+@Composable
+private fun PollIntervalPicker(selected: Int, onSelect: (Int) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Poll interval", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            listOf(15, 30, 60, 120).forEach { seconds ->
+                val isSelected = selected == seconds
+                Surface(
+                    onClick = { onSelect(seconds) },
+                    modifier = Modifier.weight(1f),
+                    shape = MaterialTheme.shapes.small,
+                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                    border = BorderStroke(
+                        1.dp,
+                        if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                    ),
+                ) {
+                    Text(
+                        "${seconds}s",
+                        modifier = Modifier.padding(vertical = 10.dp),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -532,7 +727,7 @@ private fun EditDomainDialog(
         title = { Text("Edit Domain") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
+                SwTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Domain Name") },
@@ -544,7 +739,7 @@ private fun EditDomainDialog(
                         expanded = zoneDropdownExpanded,
                         onExpandedChange = { zoneDropdownExpanded = it },
                     ) {
-                        OutlinedTextField(
+                        SwTextField(
                             value = selectedZone?.name ?: "None",
                             onValueChange = {},
                             readOnly = true,
@@ -569,7 +764,7 @@ private fun EditDomainDialog(
                         }
                     }
                 } else {
-                    OutlinedTextField(
+                    SwTextField(
                         value = manualZoneId,
                         onValueChange = { manualZoneId = it },
                         label = { Text("Hosted Zone ID (optional)") },
@@ -617,7 +812,7 @@ private fun EditSubdomainDialog(
                     Switch(checked = isApex, onCheckedChange = { isApex = it })
                 }
                 if (!isApex) {
-                    OutlinedTextField(
+                    SwTextField(
                         value = prefix,
                         onValueChange = { prefix = it },
                         label = { Text("Subdomain Prefix") },
@@ -630,7 +825,7 @@ private fun EditSubdomainDialog(
                     Switch(checked = healthEnabled, onCheckedChange = { healthEnabled = it })
                 }
                 if (healthEnabled) {
-                    OutlinedTextField(
+                    SwTextField(
                         value = healthPath,
                         onValueChange = { healthPath = it },
                         label = { Text("Health Check Path") },
@@ -639,14 +834,14 @@ private fun EditSubdomainDialog(
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
+                        SwTextField(
                             value = rangeStart.toString(),
                             onValueChange = { rangeStart = it.toIntOrNull() ?: rangeStart },
                             label = { Text("Status Min") },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                         )
-                        OutlinedTextField(
+                        SwTextField(
                             value = rangeEnd.toString(),
                             onValueChange = { rangeEnd = it.toIntOrNull() ?: rangeEnd },
                             label = { Text("Status Max") },
@@ -654,19 +849,7 @@ private fun EditSubdomainDialog(
                             singleLine = true,
                         )
                     }
-                    Text("Poll Interval", style = MaterialTheme.typography.labelMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(15, 30, 60, 120).forEach { seconds ->
-                            Button(
-                                onClick = { interval = seconds },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (interval == seconds) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                    contentColor = if (interval == seconds) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                ),
-                            ) { Text("${seconds}s", style = MaterialTheme.typography.labelSmall) }
-                        }
-                    }
+                    PollIntervalPicker(selected = interval, onSelect = { interval = it })
                 }
             }
         },
@@ -701,14 +884,14 @@ private fun EditInstanceDialog(
         title = { Text("Edit Instance") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
+                SwTextField(
                     value = label,
                     onValueChange = { label = it },
                     label = { Text("Label") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
+                SwTextField(
                     value = region,
                     onValueChange = { region = it },
                     label = { Text("AWS Region") },
@@ -758,9 +941,9 @@ private fun AddInstanceSheet(
         modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("Add EC2 Instance", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        SheetHeader(icon = Icons.Default.Dns, title = "Add EC2 instance", subtitle = "Pick a server from your account to manage")
 
-        OutlinedTextField(
+        SwTextField(
             value = region, onValueChange = { region = it.trim() },
             label = { Text("AWS Region") }, placeholder = { Text("us-east-1") },
             modifier = Modifier.fillMaxWidth(), singleLine = true,
@@ -770,7 +953,7 @@ private fun AddInstanceSheet(
             expanded = dropdownExpanded,
             onExpandedChange = { if (!instancesLoading) dropdownExpanded = it },
         ) {
-            OutlinedTextField(
+            SwTextField(
                 value = when {
                     instancesLoading -> "Loading…"
                     selectedInstance != null -> selectedInstance!!.dropdownLabel
@@ -820,22 +1003,27 @@ private fun AddInstanceSheet(
             }
         }
 
-        OutlinedTextField(
+        SwTextField(
             value = label, onValueChange = { label = it },
             label = { Text("Label (friendly name)") }, placeholder = { Text("e.g. Web Server 1") },
             modifier = Modifier.fillMaxWidth(), singleLine = true,
         )
 
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             TextButton(onClick = onDismiss) { Text("Cancel") }
-            Spacer(Modifier.width(8.dp))
-            Button(
+            SwButton(
+                text = "Add instance",
                 onClick = {
-                    val id = selectedInstance?.instanceId ?: return@Button
+                    val id = selectedInstance?.instanceId ?: return@SwButton
                     onAdd(id, label.ifBlank { selectedInstance?.displayName ?: id }, region)
                 },
                 enabled = selectedInstance != null && region.isNotBlank(),
-            ) { Text("Add Instance", fontWeight = FontWeight.SemiBold) }
+                modifier = Modifier.weight(1f),
+            )
         }
         Spacer(Modifier.height(16.dp))
     }
@@ -858,49 +1046,44 @@ private fun AddSubdomainSheet(
         modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Add Subdomain", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        SheetHeader(icon = Icons.Default.Language, title = "Add subdomain", subtitle = "Point a name at your instances")
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Apex domain", modifier = Modifier.weight(1f))
             Switch(checked = isApex, onCheckedChange = { isApex = it })
         }
         if (!isApex) {
-            OutlinedTextField(value = prefix, onValueChange = { prefix = it }, label = { Text("Subdomain Prefix") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            SwTextField(value = prefix, onValueChange = { prefix = it }, label = { Text("Subdomain Prefix") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Enable health check", modifier = Modifier.weight(1f))
             Switch(checked = healthEnabled, onCheckedChange = { healthEnabled = it })
         }
         if (healthEnabled) {
-            OutlinedTextField(
+            SwTextField(
                 value = path, onValueChange = { path = it },
                 label = { Text("Health Check Path") },
                 placeholder = { Text("/") },
                 modifier = Modifier.fillMaxWidth(), singleLine = true,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = rangeStart.toString(), onValueChange = { rangeStart = it.toIntOrNull() ?: rangeStart }, label = { Text("Status Min") }, modifier = Modifier.weight(1f), singleLine = true)
-                OutlinedTextField(value = rangeEnd.toString(), onValueChange = { rangeEnd = it.toIntOrNull() ?: rangeEnd }, label = { Text("Status Max") }, modifier = Modifier.weight(1f), singleLine = true)
+                SwTextField(value = rangeStart.toString(), onValueChange = { rangeStart = it.toIntOrNull() ?: rangeStart }, label = { Text("Status Min") }, modifier = Modifier.weight(1f), singleLine = true)
+                SwTextField(value = rangeEnd.toString(), onValueChange = { rangeEnd = it.toIntOrNull() ?: rangeEnd }, label = { Text("Status Max") }, modifier = Modifier.weight(1f), singleLine = true)
             }
-            Text("Poll Interval", style = MaterialTheme.typography.labelMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(15, 30, 60, 120).forEach { seconds ->
-                    Button(
-                        onClick = { interval = seconds }, modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (interval == seconds) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (interval == seconds) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                    ) { Text("${seconds}s", style = MaterialTheme.typography.labelSmall) }
-                }
-            }
+            PollIntervalPicker(selected = interval, onSelect = { interval = it })
         }
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        val healthPath = if (healthEnabled) path.ifBlank { "/" } else ""
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             TextButton(onClick = onDismiss) { Text("Cancel") }
-            Spacer(Modifier.width(8.dp))
-            val healthPath = if (healthEnabled) path.ifBlank { "/" } else ""
-            Button(onClick = { onAdd(if (isApex) "" else prefix, isApex, healthPath, rangeStart, rangeEnd, interval) }, enabled = isApex || prefix.isNotBlank()) {
-                Text("Add Subdomain", fontWeight = FontWeight.SemiBold)
-            }
+            SwButton(
+                text = "Add subdomain",
+                onClick = { onAdd(if (isApex) "" else prefix, isApex, healthPath, rangeStart, rangeEnd, interval) },
+                enabled = isApex || prefix.isNotBlank(),
+                modifier = Modifier.weight(1f),
+            )
         }
         Spacer(Modifier.height(16.dp))
     }

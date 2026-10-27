@@ -1,7 +1,12 @@
 package dev.tsk.server.watcher.ui.components
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -17,16 +22,25 @@ fun ConfirmationDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val accent = if (isDestructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
     AlertDialog(
         onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = if (isDestructive) Icons.Default.WarningAmber else Icons.Default.PowerSettingsNew,
+                contentDescription = null,
+                tint = accent,
+            )
+        },
         title = { Text(title) },
         text = { Text(message, style = MaterialTheme.typography.bodyMedium) },
         confirmButton = {
-            TextButton(
+            Button(
                 onClick = { onConfirm(); onDismiss() },
-                colors = if (isDestructive) ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                ) else ButtonDefaults.textButtonColors(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = accent,
+                    contentColor = if (isDestructive) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary,
+                ),
             ) {
                 Text(confirmText)
             }

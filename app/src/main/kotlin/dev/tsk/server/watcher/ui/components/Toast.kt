@@ -5,16 +5,30 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import dev.tsk.server.watcher.ui.theme.sw
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,36 +59,37 @@ class ToastManager @Inject constructor() {
 
 @Composable
 fun ToastView(toast: ToastMessage, modifier: Modifier = Modifier) {
-    val backgroundColor = when (toast.type) {
-        ToastType.SUCCESS -> Color(0xFF0D2B0D)
-        ToastType.ERROR   -> Color(0xFF2B0D0D)
-        ToastType.WARNING -> Color(0xFF2B1A0D)
-        ToastType.INFO    -> Color(0xFF0D0D0D)
+    val sw = MaterialTheme.sw
+    val (container, accent, onContainer, icon) = when (toast.type) {
+        ToastType.SUCCESS -> ToastStyle(sw.successContainer, sw.success, sw.onSuccessContainer, Icons.Default.CheckCircle)
+        ToastType.ERROR   -> ToastStyle(sw.dangerContainer, sw.danger, sw.onDangerContainer, Icons.Default.ErrorOutline)
+        ToastType.WARNING -> ToastStyle(sw.warningContainer, sw.warning, sw.onWarningContainer, Icons.Default.WarningAmber)
+        ToastType.INFO    -> ToastStyle(sw.infoContainer, sw.info, sw.onInfoContainer, Icons.Default.Info)
     }
-    val textColor = when (toast.type) {
-        ToastType.SUCCESS -> Color(0xFF69F0AE)
-        ToastType.ERROR   -> Color(0xFFFF6E6E)
-        ToastType.WARNING -> Color(0xFFFFD180)
-        ToastType.INFO    -> Color(0xFF1E6FFF)
-    }
+    val shape = MaterialTheme.shapes.medium
 
-    Surface(
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(10.dp),
-        color = backgroundColor,
-        shadowElevation = 8.dp,
-        tonalElevation = 0.dp,
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .shadow(12.dp, shape, ambientColor = accent.copy(alpha = 0.5f), spotColor = accent.copy(alpha = 0.5f))
+            .clip(shape)
+            .background(container)
+            .border(1.dp, accent.copy(alpha = 0.35f), shape)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
         Text(
             text = toast.message,
-            color = textColor,
+            color = onContainer,
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
         )
     }
 }
+
+private data class ToastStyle(val container: Color, val accent: Color, val onContainer: Color, val icon: ImageVector)
 
 @Composable
 fun AnimatedToast(toast: ToastMessage?, modifier: Modifier = Modifier) {

@@ -3,20 +3,17 @@ package dev.tsk.server.watcher.feature.auth
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,6 +30,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import dev.tsk.server.watcher.ui.design.SwButton
+import dev.tsk.server.watcher.ui.design.SwTextField
 
 /**
  * Shows a freshly generated TOTP secret and asks for the first code to prove the authenticator
@@ -64,7 +63,8 @@ fun TotpSetupForm(
 
         Surface(
             shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceVariant,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
             modifier = Modifier.fillMaxWidth(),
         ) {
             SelectionContainer {
@@ -79,8 +79,9 @@ fun TotpSetupForm(
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = { clipboard.setText(AnnotatedString(secret)) }) { Text("Copy key") }
+            OutlinedButton(onClick = { clipboard.setText(AnnotatedString(secret)) }, modifier = Modifier.weight(1f)) { Text("Copy key") }
             OutlinedButton(
+                modifier = Modifier.weight(1f),
                 onClick = {
                     val uri = Uri.parse(
                         "otpauth://totp/ServerWatcher:${Uri.encode(accountName)}" +
@@ -92,7 +93,7 @@ fun TotpSetupForm(
                         linkFailed = true
                     }
                 },
-            ) { Text("Open authenticator app") }
+            ) { Text("Open app", maxLines = 1) }
         }
         if (linkFailed) {
             Text(
@@ -102,7 +103,7 @@ fun TotpSetupForm(
             )
         }
 
-        OutlinedTextField(
+        SwTextField(
             value = code,
             onValueChange = { if (it.length <= 6 && it.all(Char::isDigit)) code = it },
             label = { Text("6-digit code") },
@@ -111,20 +112,12 @@ fun TotpSetupForm(
             keyboardActions = KeyboardActions(onDone = { if (code.length == 6 && !isLoading) onSubmit(code) }),
             singleLine = true,
         )
-        Button(
+        SwButton(
+            text = "Verify and enable",
             onClick = { onSubmit(code) },
-            enabled = code.length == 6 && !isLoading,
+            enabled = code.length == 6,
+            loading = isLoading,
             modifier = Modifier.fillMaxWidth(),
-        ) {
-            if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.height(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
-            } else {
-                Text("Verify and enable", fontWeight = FontWeight.SemiBold)
-            }
-        }
+        )
     }
 }
