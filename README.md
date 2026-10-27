@@ -15,7 +15,7 @@
   <img alt="AWS" src="https://img.shields.io/badge/AWS-Cognito%20%C2%B7%20EC2%20%C2%B7%20Route%2053-FF9900?logo=amazonwebservices&logoColor=white" />
   <img alt="Hilt" src="https://img.shields.io/badge/DI-Hilt-2E7D32" />
   <a href="LICENSE"><img alt="License: PolyForm Noncommercial" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-blue" /></a>
-  <a href="https://github.com/tsk0211/ServerWatcher/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/tsk0211/ServerWatcher?include_prereleases" /></a>
+  <a href="apk/ServerWatcher-latest.apk?raw=true"><img alt="Download APK" src="https://img.shields.io/badge/download-APK%200.1.0-3DDC84?logo=android&logoColor=white" /></a>
 </p>
 
 ---
@@ -82,25 +82,63 @@ AWS SDK for Kotlin (Cognito, EC2, Route 53) · Ktor client · Navigation Compose
 
 ## Install
 
-Download the latest signed APK from the [Releases page](https://github.com/tsk0211/ServerWatcher/releases/latest)
-(also kept in [`apk/`](apk/) on the `release` branch), verify it with the `.sha256` file, and open it on your
-phone. Android will ask you to allow installs from your browser or file manager the first time.
+### Download
 
-ServerWatcher has **no server of its own**. Each person deploys the small AWS backend into their own
-account (step 1 below), so your credentials, instances and DNS never leave your phone and your AWS account.
+**[⬇ Download ServerWatcher-latest.apk](apk/ServerWatcher-latest.apk?raw=true)** (version 0.1.0, about 38 MB,
+Android 8.0 or newer) · [SHA-256 checksum](apk/ServerWatcher-latest.apk.sha256)
+
+> [!WARNING]
+> **Read this before you install.**
+>
+> - **Not from an app store.** This APK is not on Google Play and has not been reviewed by Google. You install
+>   it by sideloading, so only install it if you trust this repository.
+> - **Early release (0.x).** It is a single-developer project and may have bugs. It can start and stop your EC2
+>   instances and change Route 53 DNS records, which can interrupt services and cost money. Try it on
+>   non-critical servers first.
+> - **You need your own AWS backend.** ServerWatcher has no server of its own. The app does nothing useful until
+>   you deploy the CDK stack into **your** AWS account and enter its four values (see
+>   [Getting started](#getting-started)). You pay AWS for whatever you run.
+> - **Noncommercial use only,** under the [PolyForm Noncommercial license](LICENSE), and provided as is,
+>   without warranty.
+> - **Release signing key.** The app is signed with a project-owned key, not Google's. If a future version fails
+>   to install over this one with a signature error, uninstall and reinstall. Your AWS setup lives in your
+>   account, so you only re-enter the four values.
+
+### Install on your phone
+
+1. Open this page on your phone and tap the download link above, or copy the file over from a computer.
+2. *(Recommended)* Check the download is genuine. On a computer, run `sha256sum -c ServerWatcher-latest.apk.sha256`
+   (macOS: `shasum -a 256 -c`; Windows: `certutil -hashfile ServerWatcher-latest.apk SHA256` and compare).
+   The value must match the one in the [`.sha256` file](apk/ServerWatcher-latest.apk.sha256).
+3. Open the APK. Android asks you to **allow installs from this source** (your browser or file manager). Allow
+   it for this one install, then go back and tap **Install**. You can switch the permission off afterwards.
+4. If Play Protect says the app is unrecognised, that is expected for apps outside the Play Store. Choose
+   **More details → Install anyway** if you trust this repository.
+5. Open **ServerWatcher** and follow [Getting started](#getting-started) to connect your AWS account.
+
+Signing certificate SHA-256, for the paranoid (`apksigner verify --print-certs`):
+`4ebd6a2ffe6ad71280b1d10100ec982560d4a14a7456c1f326f501730f67b7ba`
+
+### Uninstalling
+
+Remove it like any app. Its data is stored only on your phone, in an encrypted database, and is deleted with
+the app. Nothing is left in your AWS account except the stack you deployed; remove that with `npx cdk destroy`.
 
 ## Getting started
+
+ServerWatcher has **no server of its own**. Each person deploys the small AWS backend into their own account,
+so your credentials, instances and DNS never leave your phone and your AWS account.
 
 1. **Deploy the backend** — `cd cdk && npm install && npx cdk deploy`
 2. **Tag the EC2 instances** you want to manage with `ManagedBy=ServerWatcher`
 3. **Create a Cognito user** for yourself
-4. **Build and install** — `./gradlew assembleDebug`
+4. **Install the app** — use the [downloaded APK](#download), or build it yourself with `./gradlew assembleDebug`
 5. **Open the app** and enter the four stack outputs on the onboarding screen
 
 Full walkthrough, including CLI commands: [SETUP.md](SETUP.md).
 
-Requirements: Android Studio with SDK 35, JDK 17, Node.js 18+, and the AWS CLI configured for the account
-you deploy into.
+Requirements: the AWS CLI configured for the account you deploy into and Node.js 18+. To build the app
+yourself you also need Android Studio with SDK 35 and JDK 17.
 
 ## Screenshots
 
