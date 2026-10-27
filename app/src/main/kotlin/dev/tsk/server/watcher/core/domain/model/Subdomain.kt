@@ -10,3 +10,9 @@ data class Subdomain(
     val healthRangeEnd: Int,
     val healthIntervalSeconds: Int,
 )
+
+/** Public hostname served by this subdomain, e.g. `api.example.com`. */
+fun Subdomain.hostName(domain: Domain): String {
+    val zone = domain.hostedZoneName?.ifBlank { null } ?: domain.name
+    return if (isApex || prefix.isBlank()) zone else "$prefix.$zone"
+}
