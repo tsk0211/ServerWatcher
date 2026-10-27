@@ -4,6 +4,8 @@ import android.util.Log
 import dev.tsk.server.watcher.core.domain.model.Ec2State
 import dev.tsk.server.watcher.core.domain.model.HealthStatus
 import dev.tsk.server.watcher.core.domain.model.Instance
+import dev.tsk.server.watcher.core.domain.model.hostName
+import dev.tsk.server.watcher.core.domain.repository.IDomainRepository
 import dev.tsk.server.watcher.core.domain.repository.IEc2Repository
 import dev.tsk.server.watcher.core.domain.repository.IHealthRepository
 import dev.tsk.server.watcher.core.domain.repository.IInstanceRepository
@@ -29,6 +31,7 @@ data class InstanceStatus(
 class ObserveDomainStatusUseCase @Inject constructor(
     private val instanceRepository: IInstanceRepository,
     private val subdomainRepository: ISubdomainRepository,
+    private val domainRepository: IDomainRepository,
     private val ec2Repository: IEc2Repository,
     private val healthRepository: IHealthRepository,
 ) {
@@ -37,6 +40,7 @@ class ObserveDomainStatusUseCase @Inject constructor(
         while (true) {
             pollCount++
             val instances = instanceRepository.getAllByDomain(domainId)
+            val domain = domainRepository.getById(domainId)
             Log.d(TAG, "[Poll#$pollCount] domainId=$domainId instances=${instances.size}")
 
             val statuses = coroutineScope {
@@ -66,12 +70,13 @@ class ObserveDomainStatusUseCase @Inject constructor(
                         val healthStatus = if (
                             ec2State == Ec2State.RUNNING &&
                             subdomain != null &&
+                            domain != null &&
                             subdomain.healthPath.isNotBlank() &&
                             publicIp != null
                         ) {
                             try {
                                 healthRepository.check(
-                                    url = "http://$publicIp",
+                                    url = "https://${subdomain.hostName(domain)}",
                                     path = subdomain.healthPath,
                                     expectedRangeStart = subdomain.healthRangeStart,
                                     expectedRangeEnd = subdomain.healthRangeEnd,
