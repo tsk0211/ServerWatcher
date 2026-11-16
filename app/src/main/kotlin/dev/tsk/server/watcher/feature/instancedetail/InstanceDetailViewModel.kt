@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.tsk.server.watcher.core.domain.model.Ec2State
 import dev.tsk.server.watcher.core.domain.model.HealthStatus
+import dev.tsk.server.watcher.core.domain.model.hostName
 import dev.tsk.server.watcher.core.domain.model.Instance
 import dev.tsk.server.watcher.core.domain.model.InstanceConfig
 import dev.tsk.server.watcher.core.domain.repository.IDomainRepository
@@ -110,9 +111,10 @@ class InstanceDetailViewModel @Inject constructor(
         val publicIp = ec2Repository.getPublicIp(instance.instanceId, instance.region)
         val healthStatus = if (ec2State == Ec2State.RUNNING && publicIp != null) {
             val subdomain = subdomainRepository.getById(instance.subdomainId)
-            if (subdomain != null && subdomain.healthPath.isNotBlank()) {
+            val domain = subdomain?.let { domainRepository.getById(it.domainId) }
+            if (subdomain != null && domain != null && subdomain.healthPath.isNotBlank()) {
                 healthRepository.check(
-                    url = "http://$publicIp",
+                    url = "https://${subdomain.hostName(domain)}",
                     path = subdomain.healthPath,
                     expectedRangeStart = subdomain.healthRangeStart,
                     expectedRangeEnd = subdomain.healthRangeEnd,
