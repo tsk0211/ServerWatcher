@@ -1,0 +1,46 @@
+name: Generate signing key
+
+# One-off. Creates the release signing key, encrypts it with the KEYSTORE_PASSWORD secret and commits
+# only the encrypted file (signing/release.p12.enc) to the release branch. The plain key never leaves
+# the runner. Run it from the Actions tab; it refuses to overwrite an existing key.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    name: Generate and store the encrypted key
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release
+
+      - name: Create the encrypted key
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -e signing/release.p12.enc ]; then
+            echo "::error::signing/release.p12.enc already exists. Replacing it would orphan every installed copy."
+            exit 1
+          fi
+          if [ "${#KEYSTORE_PASSWORD}" -lt 24 ]; then
+            echo "::error::KEYSTORE_PASSWORD must be at least 24 characters: the encrypted file is public."
+            exit 1
+          fi
+          keytool -genkeypair -storetype PKCS12 -keystore "$RUNNER_TEMP/release.p12" \
+            -alias serverwatcher -keyalg RSA -keysize 4096 -validity 10000 \
+            -dname "CN=ServerWatcher" -storepass:env KEYSTORE_PASSWORD -keypass:env KEYSTORE_PASSWORD
+          mkdir -p signing
+          openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 \
+            -in "$RUNNER_TEMP/release.p12" -out signing/release.p12.enc -pass env:KEYSTORE_PASSWORD
+
+      - name: Commit the encrypted key
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add signing/release.p12.enc
+          git commit -m "Add encrypted release signing key"
+          git push origin HEAD:release
