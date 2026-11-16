@@ -22,9 +22,9 @@ class HealthRepositoryImpl @Inject constructor(
         if (status in expectedRangeStart..expectedRangeEnd) {
             HealthStatus.Healthy
         } else {
-            HealthStatus.Unhealthy
+            HealthStatus.Unhealthy(status)
         }
     }.getOrElse { e ->
-        HealthStatus.Error(e.message ?: "Unknown error")
+        HealthStatus.Error(e.message ?: e::class.java.simpleName)
     }
 }

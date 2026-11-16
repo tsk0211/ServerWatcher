@@ -43,13 +43,15 @@ fun Ec2StateChip(state: Ec2State, modifier: Modifier = Modifier) {
     )
 }
 
+private const val MAX_ERROR_LABEL = 24
+
 @Composable
 fun HealthStatusChip(status: HealthStatus, modifier: Modifier = Modifier) {
     val (label, color) = when (status) {
         is HealthStatus.Healthy -> "Healthy" to StateRunning
-        is HealthStatus.Unhealthy -> "Unhealthy" to StateError
+        is HealthStatus.Unhealthy -> "Unhealthy · HTTP ${status.statusCode}" to StateError
         is HealthStatus.Unknown -> "Unknown" to StateUnknown
-        is HealthStatus.Error -> "Error" to StateError
+        is HealthStatus.Error -> "Error · ${status.message.take(MAX_ERROR_LABEL)}" to StateError
     }
     StatusChip(label = label, dotColor = color, modifier = modifier)
 }
