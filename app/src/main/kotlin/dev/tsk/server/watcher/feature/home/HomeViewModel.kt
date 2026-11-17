@@ -81,6 +81,8 @@ class HomeViewModel @Inject constructor(
 
     private val pollingJobs = mutableMapOf<String, Job>()
     private var domainObserveJob: Job? = null
+    private var pollingActive = false
+    private var knownDomains: List<Domain> = emptyList()
 
     init {
         Log.d(TAG, "[HomeVM] init")
@@ -119,7 +121,21 @@ class HomeViewModel @Inject constructor(
         observeDomains()
     }
 
+    /** Health polling runs only while the screen is visible; the screen calls these from its lifecycle. */
+    fun startPolling() {
+        pollingActive = true
+        startPollingForNewDomains(knownDomains)
+    }
+
+    fun stopPolling() {
+        pollingActive = false
+        pollingJobs.values.forEach { it.cancel() }
+        pollingJobs.clear()
+    }
+
     private fun startPollingForNewDomains(domains: List<Domain>) {
+        knownDomains = domains
+        if (!pollingActive) return
         val newIds = domains.map { it.id }.toSet()
 
         pollingJobs.keys.filter { it !in newIds }.forEach { id ->

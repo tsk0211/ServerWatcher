@@ -4,6 +4,7 @@ import dev.tsk.server.watcher.core.domain.model.HealthStatus
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -32,5 +33,13 @@ class HealthRepositoryImplTest {
     fun `transport failure is an error`() {
         val failing = HealthRepositoryImpl(HttpClient(MockEngine { error("boom") }))
         assertTrue(check(failing) is HealthStatus.Error)
+    }
+
+    @Test
+    fun `request timeout is reported as a short reason`() {
+        val timingOut = HealthRepositoryImpl(
+            HttpClient(MockEngine { throw HttpRequestTimeoutException("https://api.example.com", 10_000L) }),
+        )
+        assertEquals(HealthStatus.Error("timeout"), check(timingOut))
     }
 }

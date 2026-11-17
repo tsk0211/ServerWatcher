@@ -108,7 +108,16 @@ class DomainDetailViewModel @Inject constructor(
         loadDomain()
         loadHostedZones()
         observeContent()
-        observeStatuses()
+    }
+
+    /** Health polling runs only while the screen is visible; the screen calls these from its lifecycle. */
+    fun startPolling() {
+        if (statusJob?.isActive != true) observeStatuses()
+    }
+
+    fun stopPolling() {
+        statusJob?.cancel()
+        statusJob = null
     }
 
     fun retry() {
@@ -118,7 +127,8 @@ class DomainDetailViewModel @Inject constructor(
         _statusLoaded.value = false
         loadDomain()
         observeContent()
-        observeStatuses()
+        stopPolling()
+        startPolling()
     }
 
     private fun loadDomain() {
