@@ -20,9 +20,10 @@ object NetworkModule {
     @Singleton
     fun provideKtorClient(): HttpClient = HttpClient(OkHttp) {
         install(HttpTimeout) {
-            connectTimeoutMillis = 10_000L
-            requestTimeoutMillis = 10_000L
-            socketTimeoutMillis = 10_000L
+            // Ceiling only: health checks enforce their own, shorter per-subdomain timeout.
+            connectTimeoutMillis = 60_000L
+            requestTimeoutMillis = 60_000L
+            socketTimeoutMillis = 60_000L
         }
         install(ContentNegotiation) {
             json(Json {

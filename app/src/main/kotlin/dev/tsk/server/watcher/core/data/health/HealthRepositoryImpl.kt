@@ -6,12 +6,13 @@ import io.ktor.client.HttpClient
 import io.ktor.client.network.sockets.ConnectTimeoutException
 import io.ktor.client.network.sockets.SocketTimeoutException
 import io.ktor.client.plugins.HttpRequestTimeoutException
-import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.statement.HttpResponse
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withTimeout
 import java.net.ConnectException
 import java.net.UnknownHostException
 import javax.inject.Inject
@@ -39,16 +40,12 @@ class HealthRepositoryImpl @Inject constructor(
     }
 
     private suspend fun attemptOnce(url: String, expected: IntRange, timeoutSeconds: Int): HealthStatus = runCatching {
-        val timeoutMillis = timeoutSeconds * 1_000L
-        val response: HttpResponse = httpClient.get(url) {
-            timeout {
-                connectTimeoutMillis = timeoutMillis
-                requestTimeoutMillis = timeoutMillis
-                socketTimeoutMillis = timeoutMillis
-            }
+        // The client's own timeouts are only a generous ceiling; the per-subdomain limit is enforced here.
+        withTimeout(timeoutSeconds * 1_000L) {
+            val response: HttpResponse = httpClient.get(url)
+            val status = response.status.value
+            if (status in expected) HealthStatus.Healthy else HealthStatus.Unhealthy(status)
         }
-        val status = response.status.value
-        if (status in expected) HealthStatus.Healthy else HealthStatus.Unhealthy(status)
     }.getOrElse { e ->
         // Only a cancelled caller aborts; a timeout inside the request is a normal Error result.
         currentCoroutineContext().ensureActive()
@@ -56,7 +53,8 @@ class HealthRepositoryImpl @Inject constructor(
     }
 
     private fun Throwable.reason(): String = when (this) {
-        is HttpRequestTimeoutException, is ConnectTimeoutException, is SocketTimeoutException -> "timeout"
+        is TimeoutCancellationException, is HttpRequestTimeoutException,
+        is ConnectTimeoutException, is SocketTimeoutException -> "timeout"
         is UnknownHostException -> "DNS lookup failed"
         is SSLException -> "TLS error"
         is ConnectException -> "connection refused"
