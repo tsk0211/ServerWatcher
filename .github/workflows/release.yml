@@ -1,10 +1,17 @@
 name: Release
 
-# Run by pushing a version tag that points at a commit on the `release` branch:
-#   git tag v0.1.0 && git push origin v0.1.0
+# Builds the signed APK whenever `release` receives a push (normally a merged PR) that bumps the
+# `VERSION` file, and stores it as apk/ServerWatcher-latest.apk on `release`.
 on:
   push:
-    tags: ["v*"]
+    branches: [release]
+    # The build's own commits and non-code changes never need a new APK.
+    paths-ignore:
+      - "apk/**"
+      - "signing/**"
+      - "docs/**"
+      - "**.md"
+      - "LICENSE"
 
 permissions:
   contents: write
@@ -22,13 +29,20 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Tag must be on the release branch
+      - name: Read the version and make sure it is new
         run: |
           git fetch origin release
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/release; then
-            echo "::error::$GITHUB_REF_NAME is not on the release branch. Promote dev to release first."
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::VERSION must look like 1.2.3, found '$VERSION'."
             exit 1
           fi
+          BUILT="$(git show origin/release:apk/VERSION 2>/dev/null | tr -d '[:space:]' || true)"
+          if [ "$BUILT" = "$VERSION" ]; then
+            echo "::error::Version $VERSION is already built. Bump the VERSION file in your PR to publish a new APK."
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Signing password must exist
         env:
@@ -50,7 +64,6 @@ jobs:
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
-          # The encrypted key lives on the release branch, so a tag cut before it was added still finds it.
           if ! git show origin/release:signing/release.p12.enc > "$RUNNER_TEMP/release.p12.enc"; then
             echo "::error::signing/release.p12.enc is missing on release. Run the 'Generate signing key' workflow."
             exit 1
@@ -65,46 +78,27 @@ jobs:
           KEY_ALIAS: serverwatcher
           KEY_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           ./gradlew --no-daemon testDebugUnitTest assembleRelease \
             -PversionName="$VERSION" -PversionCode="$GITHUB_RUN_NUMBER"
 
-      - name: Verify signature and name the artifacts
+      - name: Verify the signature
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
           "$APKSIGNER" verify --verbose app/build/outputs/apk/release/app-release.apk
-          mkdir -p dist
-          cp app/build/outputs/apk/release/app-release.apk "dist/ServerWatcher-$VERSION.apk"
-          (cd dist && sha256sum "ServerWatcher-$VERSION.apk" > "ServerWatcher-$VERSION.apk.sha256")
-          cat "dist/ServerWatcher-$VERSION.apk.sha256"
+          mkdir -p "$RUNNER_TEMP/dist"
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/dist/ServerWatcher-latest.apk"
 
-      - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Store the APK on the release branch
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          PRERELEASE=""
-          case "$VERSION" in 0.*|*-*) PRERELEASE="--prerelease" ;; esac
-          FILES=("dist/ServerWatcher-$VERSION.apk" "dist/ServerWatcher-$VERSION.apk.sha256")
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            # A release was already drafted for this tag in the GitHub UI: attach the files to it.
-            gh release upload "$GITHUB_REF_NAME" "${FILES[@]}" --clobber
-          else
-            gh release create "$GITHUB_REF_NAME" "${FILES[@]}" \
-              --title "ServerWatcher $VERSION" --generate-notes $PRERELEASE
-          fi
-
-      - name: Keep the latest APK on the release branch
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          cp -r dist "$RUNNER_TEMP/dist"
+          git fetch origin release
           git checkout -B release origin/release
           mkdir -p apk
-          cp "$RUNNER_TEMP/dist/ServerWatcher-$VERSION.apk" apk/ServerWatcher-latest.apk
+          cp "$RUNNER_TEMP/dist/ServerWatcher-latest.apk" apk/ServerWatcher-latest.apk
           (cd apk && sha256sum ServerWatcher-latest.apk > ServerWatcher-latest.apk.sha256)
+          echo "$VERSION" > apk/VERSION
+          cat apk/ServerWatcher-latest.apk.sha256
           git add apk
           git commit -m "Add ServerWatcher $VERSION APK"
           git push origin release

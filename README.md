@@ -151,7 +151,7 @@ Early, single-user project under active development.
 ## Branches and releases
 
 `dev` is where work happens; `release` is the default branch and carries the latest APK. Releases are cut by
-tagging `release` — see [docs/RELEASING.md](docs/RELEASING.md).
+bumping `VERSION` on `release` — see [docs/RELEASING.md](docs/RELEASING.md).
 
 ## License
 

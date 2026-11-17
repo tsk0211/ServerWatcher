@@ -7,7 +7,7 @@
 | `dev` | Day-to-day work. Push straight to it. CI builds and tests every push. |
 | `release` | What people see by default. Receives `dev` when you want to publish. Holds the latest signed APK in `apk/`. |
 
-Flow: **push to `dev` → merge `dev` into `release` → tag `release` → CI publishes.**
+Flow: **push to `dev` → merge `dev` into `release` with a bumped `VERSION` → CI publishes the APK.**
 
 ## One-time setup: the signing key
 
@@ -30,34 +30,29 @@ password lives in a secret, so everything can be done from a browser:
 # 1. Work lands on dev
 git push origin dev
 
-# 2. Promote dev to release (a merge commit is fine; release may be ahead by APK commits)
-git switch release
-git pull
-git merge dev
-git push origin release
+# 2. Bump the version in the same change (a plain "1.2.3" in the VERSION file)
+echo 1.1.2 > VERSION
 
-# 3. Tag the release commit — this triggers .github/workflows/release.yml
-git tag v0.1.0
-git push origin v0.1.0
+# 3. Merge into release (a PR is fine). The push to release starts the build.
 ```
 
-The workflow then:
+A push to `release` that changes anything other than `apk/`, `signing/`, `docs/` or `*.md` runs
+`.github/workflows/release.yml`, which:
 
-1. checks the tag is on `release`,
-2. runs the unit tests and builds a **signed** release APK (`versionName` = the tag,
+1. reads `VERSION` and fails if that version was already built (bump it and push again),
+2. runs the unit tests and builds a **signed** release APK (`versionName` = `VERSION`,
    `versionCode` = the workflow run number),
 3. verifies the signature with `apksigner`,
-4. creates the GitHub Release with the APK and its SHA-256 checksum (versions `0.x` and anything
-   with a `-` suffix are marked *pre-release*),
-5. commits the APK to `apk/ServerWatcher-latest.apk` on the `release` branch.
+4. commits the APK to `apk/ServerWatcher-latest.apk` on the `release` branch (with its SHA-256
+   checksum and `apk/VERSION`).
 
-Use [semantic versioning](https://semver.org): `v0.2.0` for features, `v0.2.1` for fixes, `v1.0.0`
-once you are happy to call it stable.
+There are no tags or GitHub release pages. Pushes to `dev` and pull requests only run CI, never a release.
+Use [semantic versioning](https://semver.org): `1.2.0` for features, `1.2.1` for fixes.
 
 ## Verifying a download
 
 ```bash
-sha256sum -c ServerWatcher-0.1.0.apk.sha256
+sha256sum -c ServerWatcher-latest.apk.sha256
 ```
 
 ## Building a release locally
@@ -74,5 +69,4 @@ To sign locally, export `KEYSTORE_PATH`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` and `K
 
 - Release builds are **not minified** yet. R8 with the AWS SDK, Ktor and SQLCipher needs testing on a
   device before it is switched on; until then the APK is larger but behaves like the debug build.
-- Each release adds one APK to the `release` branch history. Older versions stay available as GitHub
-  Release assets either way.
+- Each release adds one APK to the `release` branch history, so older versions stay available in git history.
