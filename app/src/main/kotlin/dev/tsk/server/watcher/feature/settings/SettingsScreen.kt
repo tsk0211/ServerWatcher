@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Contrast
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.AlertDialog
@@ -47,6 +48,8 @@ import dev.tsk.server.watcher.ui.components.ConfirmationDialog
 import dev.tsk.server.watcher.ui.design.AppBackground
 import dev.tsk.server.watcher.ui.design.IconBadge
 import dev.tsk.server.watcher.ui.design.SwButton
+import dev.tsk.server.watcher.core.domain.model.ThemeMode
+import dev.tsk.server.watcher.ui.design.SegmentedPicker
 import dev.tsk.server.watcher.ui.design.SwCard
 import dev.tsk.server.watcher.ui.design.SwTextField
 import dev.tsk.server.watcher.ui.design.SwTone
@@ -64,6 +67,7 @@ fun SettingsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val mfa by viewModel.mfa.collectAsStateWithLifecycle()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     var showLogoutConfirm by remember { mutableStateOf(false) }
 
     if (showLogoutConfirm) {
@@ -139,6 +143,25 @@ fun SettingsScreen(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+                SwCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        SectionHeader(
+                            icon = Icons.Default.Contrast,
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            title = "Appearance",
+                            subtitle = "Use Light outdoors in bright sun",
+                        )
+                        SegmentedPicker(
+                            label = "Theme",
+                            options = ThemeMode.entries.map { it to it.label },
+                            selected = themeMode,
+                            onSelect = viewModel::setThemeMode,
+                        )
+                    }
+                }
                 SwCard(modifier = Modifier.fillMaxWidth()) {
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(18.dp),

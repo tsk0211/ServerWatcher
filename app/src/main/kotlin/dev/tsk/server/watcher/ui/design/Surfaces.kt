@@ -54,13 +54,15 @@ fun AppBackground(
     val base = MaterialTheme.colorScheme.background
     val primary = MaterialTheme.colorScheme.primary
     val secondary = MaterialTheme.colorScheme.secondary
-    val strength = if (MaterialTheme.sw.isDark) 0.20f else 0.11f
+    // Glows wash out in sunlight, so light mode is a flat, high-contrast page.
+    val strength = if (MaterialTheme.sw.isDark) 0.20f else 0f
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(base)
             .drawBehind {
+                if (strength == 0f) return@drawBehind
                 drawRect(
                     Brush.radialGradient(
                         colors = listOf(primary.copy(alpha = strength), Color.Transparent),
@@ -119,7 +121,7 @@ fun SwCard(
     )
     val borderBrush = Brush.verticalGradient(
         colors = listOf(
-            (accent ?: if (dark) Color.White else scheme.outline).copy(alpha = if (dark) 0.28f else 0.30f),
+            (accent ?: if (dark) Color.White else scheme.outline).copy(alpha = if (dark) 0.28f else 0.70f),
             scheme.outlineVariant,
         ),
     )
@@ -149,7 +151,7 @@ fun SwCard(
                     )
                 }
             }
-            .border(1.dp, borderBrush, shape)
+            .border(if (dark) 1.dp else 1.5.dp, borderBrush, shape)
             .then(clickable),
         content = content,
     )
@@ -228,7 +230,7 @@ fun StatTile(
  */
 @Composable
 fun Color.readable(): Color =
-    if (MaterialTheme.sw.isDark) this else androidx.compose.ui.graphics.lerp(this, Color.Black, 0.45f)
+    if (MaterialTheme.sw.isDark) this else androidx.compose.ui.graphics.lerp(this, Color.Black, 0.55f)
 
 /** Title block for the top of a bottom sheet: an icon badge, a heading and a one-line hint. */
 @Composable

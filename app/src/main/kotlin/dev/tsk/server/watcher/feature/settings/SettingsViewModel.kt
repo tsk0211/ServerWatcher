@@ -6,7 +6,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.tsk.server.watcher.core.data.aws.CognitoTokenManager
 import dev.tsk.server.watcher.core.data.aws.TotpSetup
 import dev.tsk.server.watcher.core.data.local.AwsConfigRepository
+import dev.tsk.server.watcher.core.data.local.ThemePreferences
 import dev.tsk.server.watcher.core.domain.model.AwsConfig
+import dev.tsk.server.watcher.core.domain.model.ThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,7 +38,13 @@ data class MfaState(
 class SettingsViewModel @Inject constructor(
     private val configRepository: AwsConfigRepository,
     private val tokenManager: CognitoTokenManager,
+    private val themePreferences: ThemePreferences,
 ) : ViewModel() {
+
+    val themeMode: StateFlow<ThemeMode> = themePreferences.mode
+
+    fun setThemeMode(mode: ThemeMode) = themePreferences.setMode(mode)
+
 
     private val _state = MutableStateFlow(SettingsState())
     val state: StateFlow<SettingsState> = _state.asStateFlow()

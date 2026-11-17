@@ -105,6 +105,7 @@ import dev.tsk.server.watcher.ui.design.SheetHeader
 import dev.tsk.server.watcher.ui.design.SkeletonList
 import dev.tsk.server.watcher.ui.design.StatusOrb
 import dev.tsk.server.watcher.ui.design.SwButton
+import dev.tsk.server.watcher.ui.design.SegmentedPicker
 import dev.tsk.server.watcher.ui.design.SwCard
 import dev.tsk.server.watcher.ui.design.SwTextField
 import dev.tsk.server.watcher.ui.design.TonalIconButton
@@ -687,43 +688,6 @@ private fun InstanceRow(
                         onDelete()
                     },
                 )
-            }
-        }
-    }
-}
-
-/** Segmented single-choice picker; every option gets an equal share of the row. */
-@Composable
-private fun <T> SegmentedPicker(
-    label: String,
-    options: List<Pair<T, String>>,
-    selected: T,
-    onSelect: (T) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            options.forEach { (value, text) ->
-                val isSelected = selected == value
-                Surface(
-                    onClick = { onSelect(value) },
-                    modifier = Modifier.weight(1f),
-                    shape = MaterialTheme.shapes.small,
-                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
-                    border = BorderStroke(
-                        1.dp,
-                        if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                    ),
-                ) {
-                    Text(
-                        text,
-                        modifier = Modifier.padding(vertical = 10.dp),
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
         }
     }
