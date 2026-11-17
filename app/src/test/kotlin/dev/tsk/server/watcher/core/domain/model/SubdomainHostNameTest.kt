@@ -38,4 +38,15 @@ class SubdomainHostNameTest {
         val noZone = domain.copy(name = "example.com", hostedZoneName = null)
         assertEquals("app.example.com", subdomain("app").hostName(noZone))
     }
+
+    @Test
+    fun `base url uses https and no port by default`() {
+        assertEquals("https://api.kulkarni.store", subdomain("api").healthBaseUrl(domain))
+    }
+
+    @Test
+    fun `base url honours scheme and port`() {
+        val custom = subdomain("api").copy(healthScheme = HealthScheme.HTTP, healthPort = 8080)
+        assertEquals("http://api.kulkarni.store:8080", custom.healthBaseUrl(domain))
+    }
 }

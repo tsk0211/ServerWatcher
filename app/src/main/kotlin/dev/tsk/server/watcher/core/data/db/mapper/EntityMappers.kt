@@ -7,6 +7,7 @@ import dev.tsk.server.watcher.core.data.db.entity.SubdomainEntity
 import dev.tsk.server.watcher.core.domain.model.Domain
 import dev.tsk.server.watcher.core.domain.model.Instance
 import dev.tsk.server.watcher.core.domain.model.InstanceConfig
+import dev.tsk.server.watcher.core.domain.model.HealthScheme
 import dev.tsk.server.watcher.core.domain.model.Subdomain
 
 fun DomainEntity.toModel() = Domain(
@@ -36,6 +37,9 @@ fun SubdomainEntity.toModel() = Subdomain(
     healthRangeStart = healthRangeStart,
     healthRangeEnd = healthRangeEnd,
     healthIntervalSeconds = healthIntervalSeconds,
+    healthScheme = HealthScheme.fromLabel(healthScheme),
+    healthPort = healthPort,
+    healthTimeoutSeconds = healthTimeoutSeconds,
 )
 
 fun Subdomain.toEntity() = SubdomainEntity(
@@ -47,6 +51,9 @@ fun Subdomain.toEntity() = SubdomainEntity(
     healthRangeStart = healthRangeStart,
     healthRangeEnd = healthRangeEnd,
     healthIntervalSeconds = healthIntervalSeconds,
+    healthScheme = healthScheme.label,
+    healthPort = healthPort,
+    healthTimeoutSeconds = healthTimeoutSeconds,
 )
 
 fun InstanceEntity.toModel() = Instance(

@@ -1,5 +1,6 @@
 package dev.tsk.server.watcher.ui.theme
 
+import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,10 +13,13 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.ui.unit.dp
 
 /**
@@ -59,19 +63,19 @@ private val DarkSwColors = SwColors(
 
 private val LightSwColors = SwColors(
     isDark = false,
-    success = Color(0xFF00873A),
-    successContainer = Color(0xFFD3F7E2),
-    onSuccessContainer = Color(0xFF00391A),
-    warning = Color(0xFFB36B00),
-    warningContainer = Color(0xFFFFEBC7),
-    onWarningContainer = Color(0xFF4A2B00),
-    danger = Color(0xFFC4132F),
-    dangerContainer = Color(0xFFFFDDE2),
-    onDangerContainer = Color(0xFF5C0010),
-    info = Color(0xFF1456C4),
-    infoContainer = Color(0xFFDCE8FF),
-    onInfoContainer = Color(0xFF00255C),
-    star = Color(0xFFC77700),
+    success = Color(0xFF006B2E),
+    successContainer = Color(0xFFC8F2D9),
+    onSuccessContainer = Color(0xFF002D14),
+    warning = Color(0xFF8F5200),
+    warningContainer = Color(0xFFFFE4B3),
+    onWarningContainer = Color(0xFF3D2300),
+    danger = Color(0xFFB0102B),
+    dangerContainer = Color(0xFFFFD6DC),
+    onDangerContainer = Color(0xFF4D000D),
+    info = Color(0xFF0F4AA8),
+    infoContainer = Color(0xFFD3E2FF),
+    onInfoContainer = Color(0xFF001F4D),
+    star = Color(0xFFB36200),
 )
 
 val LocalSwColors = staticCompositionLocalOf { DarkSwColors }
@@ -116,15 +120,15 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF00873A),
+    primary = Color(0xFF006B2E),
     onPrimary = Color.White,
     primaryContainer = Color(0xFFC4F5D8),
     onPrimaryContainer = Color(0xFF00210F),
-    secondary = Color(0xFF1456C4),
+    secondary = Color(0xFF0F4AA8),
     onSecondary = Color.White,
     secondaryContainer = Color(0xFFDCE8FF),
     onSecondaryContainer = Color(0xFF00255C),
-    tertiary = Color(0xFF00796B),
+    tertiary = Color(0xFF00695C),
     onTertiary = Color.White,
     tertiaryContainer = Color(0xFFBDF3EA),
     onTertiaryContainer = Color(0xFF00201C),
@@ -134,7 +138,7 @@ private val LightColorScheme = lightColorScheme(
     onSurface = OnLightPrimary,
     surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = OnLightSecondary,
-    surfaceTint = Color(0xFF00873A),
+    surfaceTint = Color(0xFF006B2E),
     surfaceContainerLowest = LightSurfaceContainerLowest,
     surfaceContainerLow = LightSurfaceContainerLow,
     surfaceContainer = LightSurfaceContainer,
@@ -142,7 +146,7 @@ private val LightColorScheme = lightColorScheme(
     surfaceContainerHighest = LightSurfaceContainerHighest,
     outline = LightOutline,
     outlineVariant = LightOutlineVariant,
-    error = Color(0xFFC4132F),
+    error = Color(0xFFB0102B),
     onError = Color.White,
     errorContainer = Color(0xFFFFDDE2),
     onErrorContainer = Color(0xFF5C0010),
@@ -170,6 +174,18 @@ fun ServerWatcherTheme(
         }
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
+    }
+
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        // Keep status/navigation bar icons readable when the chosen theme differs from the system one.
+        SideEffect {
+            val window = (view.context as? Activity)?.window ?: return@SideEffect
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightNavigationBars = !darkTheme
+            }
+        }
     }
 
     CompositionLocalProvider(LocalSwColors provides if (darkTheme) DarkSwColors else LightSwColors) {

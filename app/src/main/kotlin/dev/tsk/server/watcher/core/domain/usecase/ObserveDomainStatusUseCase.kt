@@ -4,7 +4,7 @@ import android.util.Log
 import dev.tsk.server.watcher.core.domain.model.Ec2State
 import dev.tsk.server.watcher.core.domain.model.HealthStatus
 import dev.tsk.server.watcher.core.domain.model.Instance
-import dev.tsk.server.watcher.core.domain.model.hostName
+import dev.tsk.server.watcher.core.domain.model.healthBaseUrl
 import dev.tsk.server.watcher.core.domain.repository.IDomainRepository
 import dev.tsk.server.watcher.core.domain.repository.IEc2Repository
 import dev.tsk.server.watcher.core.domain.repository.IHealthRepository
@@ -20,6 +20,9 @@ import kotlinx.coroutines.flow.flow
 import javax.inject.Inject
 
 private const val TAG = "SW"
+private const val DEFAULT_INTERVAL_SECONDS = 30
+private const val MIN_INTERVAL_SECONDS = 5
+private const val TRANSITIONAL_DELAY_MS = 2_000L
 
 data class InstanceStatus(
     val instance: Instance,
@@ -43,7 +46,7 @@ class ObserveDomainStatusUseCase @Inject constructor(
             val domain = domainRepository.getById(domainId)
             Log.d(TAG, "[Poll#$pollCount] domainId=$domainId instances=${instances.size}")
 
-            val statuses = coroutineScope {
+            val polled = coroutineScope {
                 instances.map { instance ->
                     async {
                         val ec2State = try {
@@ -76,10 +79,11 @@ class ObserveDomainStatusUseCase @Inject constructor(
                         ) {
                             try {
                                 healthRepository.check(
-                                    url = "https://${subdomain.hostName(domain)}",
+                                    url = subdomain.healthBaseUrl(domain),
                                     path = subdomain.healthPath,
                                     expectedRangeStart = subdomain.healthRangeStart,
                                     expectedRangeEnd = subdomain.healthRangeEnd,
+                                    timeoutSeconds = subdomain.healthTimeoutSeconds,
                                 )
                             } catch (e: CancellationException) {
                                 throw e
@@ -98,13 +102,16 @@ class ObserveDomainStatusUseCase @Inject constructor(
                             ec2State = ec2State,
                             healthStatus = healthStatus,
                             publicIp = publicIp,
-                        )
+                        ) to subdomain?.healthIntervalSeconds
                     }
                 }.awaitAll()
             }
+            val statuses = polled.map { it.first }
+            // Poll as often as the most demanding subdomain asks for.
+            val intervalSeconds = polled.mapNotNull { it.second }.minOrNull() ?: DEFAULT_INTERVAL_SECONDS
             emit(statuses)
             val anyTransitional = statuses.any { it.ec2State.isTransitional }
-            val nextDelay = if (anyTransitional) 2_000L else 30_000L
+            val nextDelay = if (anyTransitional) TRANSITIONAL_DELAY_MS else intervalSeconds.coerceAtLeast(MIN_INTERVAL_SECONDS) * 1_000L
             Log.d(TAG, "[Poll#$pollCount] done, next poll in ${nextDelay / 1000}s (transitional=$anyTransitional)")
             delay(nextDelay)
         }

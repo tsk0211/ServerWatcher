@@ -60,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.tsk.server.watcher.R
 import dev.tsk.server.watcher.core.domain.model.HostedZoneSummary
@@ -93,6 +94,10 @@ fun HomeScreen(
     onSettingsClick: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
+    LifecycleStartEffect(viewModel) {
+        viewModel.startPolling()
+        onStopOrDispose { viewModel.stopPolling() }
+    }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val hostedZones by viewModel.hostedZones.collectAsStateWithLifecycle()
     var showAddSheet by remember { mutableStateOf(false) }

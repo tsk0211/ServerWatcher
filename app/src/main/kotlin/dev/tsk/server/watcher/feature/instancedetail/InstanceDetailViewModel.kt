@@ -7,7 +7,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.tsk.server.watcher.core.domain.model.Ec2State
 import dev.tsk.server.watcher.core.domain.model.HealthStatus
-import dev.tsk.server.watcher.core.domain.model.hostName
+import dev.tsk.server.watcher.core.domain.model.healthBaseUrl
 import dev.tsk.server.watcher.core.domain.model.Instance
 import dev.tsk.server.watcher.core.domain.model.InstanceConfig
 import dev.tsk.server.watcher.core.domain.repository.IDomainRepository
@@ -114,10 +114,11 @@ class InstanceDetailViewModel @Inject constructor(
             val domain = subdomain?.let { domainRepository.getById(it.domainId) }
             if (subdomain != null && domain != null && subdomain.healthPath.isNotBlank()) {
                 healthRepository.check(
-                    url = "https://${subdomain.hostName(domain)}",
+                    url = subdomain.healthBaseUrl(domain),
                     path = subdomain.healthPath,
                     expectedRangeStart = subdomain.healthRangeStart,
                     expectedRangeEnd = subdomain.healthRangeEnd,
+                    timeoutSeconds = subdomain.healthTimeoutSeconds,
                 )
             } else HealthStatus.Unknown
         } else HealthStatus.Unknown
