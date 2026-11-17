@@ -8,6 +8,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.tsk.server.watcher.core.domain.model.Domain
 import dev.tsk.server.watcher.core.domain.model.Ec2InstanceSummary
 import dev.tsk.server.watcher.core.domain.model.Ec2State
+import dev.tsk.server.watcher.core.domain.model.HealthCheckOptions
 import dev.tsk.server.watcher.core.domain.model.HealthStatus
 import dev.tsk.server.watcher.core.domain.model.HostedZoneSummary
 import dev.tsk.server.watcher.core.domain.model.Instance
@@ -100,6 +101,9 @@ class DomainDetailViewModel @Inject constructor(
     private val _instancesLoading = MutableStateFlow(false)
     val instancesLoading: StateFlow<Boolean> = _instancesLoading.asStateFlow()
 
+    private val _isChecking = MutableStateFlow(false)
+    val isChecking: StateFlow<Boolean> = _isChecking.asStateFlow()
+
     private var contentJob: Job? = null
     private var statusJob: Job? = null
 
@@ -113,6 +117,13 @@ class DomainDetailViewModel @Inject constructor(
     /** Health polling runs only while the screen is visible; the screen calls these from its lifecycle. */
     fun startPolling() {
         if (statusJob?.isActive != true) observeStatuses()
+    }
+
+    /** Runs the health checks again right now instead of waiting for the next interval. */
+    fun checkNow() {
+        _isChecking.value = true
+        stopPolling()
+        startPolling()
     }
 
     fun stopPolling() {
@@ -222,6 +233,7 @@ class DomainDetailViewModel @Inject constructor(
                 Log.d(TAG, "[DetailVM] statuses updated — count=${statuses.size}")
                 statusMapFlow.value = statuses.associate { it.instance.id to (it.ec2State to it.healthStatus) }
                 _statusLoaded.value = true
+                _isChecking.value = false
             }
             .launchIn(viewModelScope)
     }
@@ -346,6 +358,7 @@ class DomainDetailViewModel @Inject constructor(
         rangeStart: Int,
         rangeEnd: Int,
         intervalSeconds: Int,
+        options: HealthCheckOptions,
         onComplete: () -> Unit = {},
     ) {
         viewModelScope.launch {
@@ -360,7 +373,7 @@ class DomainDetailViewModel @Inject constructor(
                         healthRangeStart = rangeStart,
                         healthRangeEnd = rangeEnd,
                         healthIntervalSeconds = intervalSeconds,
-                    )
+                    ).withHealthOptions(options)
                 )
             }
                 .onSuccess {
@@ -392,7 +405,15 @@ class DomainDetailViewModel @Inject constructor(
         }
     }
 
-    fun addSubdomain(prefix: String, isApex: Boolean, path: String, rangeStart: Int, rangeEnd: Int, intervalSeconds: Int) {
+    fun addSubdomain(
+        prefix: String,
+        isApex: Boolean,
+        path: String,
+        rangeStart: Int,
+        rangeEnd: Int,
+        intervalSeconds: Int,
+        options: HealthCheckOptions,
+    ) {
         viewModelScope.launch {
             Log.d(TAG, "[DetailVM] addSubdomain prefix=$prefix isApex=$isApex")
             runCatching {
@@ -406,7 +427,7 @@ class DomainDetailViewModel @Inject constructor(
                         healthRangeStart = rangeStart,
                         healthRangeEnd = rangeEnd,
                         healthIntervalSeconds = intervalSeconds,
-                    )
+                    ).withHealthOptions(options)
                 )
             }
                 .onSuccess { Log.d(TAG, "[DetailVM] addSubdomain SUCCESS") }

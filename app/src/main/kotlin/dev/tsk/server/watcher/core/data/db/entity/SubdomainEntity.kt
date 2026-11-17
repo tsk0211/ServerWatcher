@@ -26,4 +26,7 @@ data class SubdomainEntity(
     val healthRangeStart: Int,
     val healthRangeEnd: Int,
     val healthIntervalSeconds: Int,
+    val healthScheme: String,
+    val healthPort: Int?,
+    val healthTimeoutSeconds: Int,
 )

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
@@ -74,6 +75,8 @@ import dev.tsk.server.watcher.core.domain.model.Ec2InstanceSummary
 import dev.tsk.server.watcher.core.domain.model.Ec2State
 import dev.tsk.server.watcher.core.domain.model.HealthStatus
 import dev.tsk.server.watcher.core.domain.model.HostedZoneSummary
+import dev.tsk.server.watcher.core.domain.model.HealthCheckOptions
+import dev.tsk.server.watcher.core.domain.model.HealthScheme
 import dev.tsk.server.watcher.core.domain.model.Subdomain
 import dev.tsk.server.watcher.ui.components.ConfirmationDialog
 import dev.tsk.server.watcher.ui.components.ErrorState
@@ -140,6 +143,7 @@ fun DomainDetailScreen(
     val hostedZones by viewModel.hostedZones.collectAsStateWithLifecycle()
     val ec2Instances by viewModel.ec2Instances.collectAsStateWithLifecycle()
     val instancesLoading by viewModel.instancesLoading.collectAsStateWithLifecycle()
+    val isChecking by viewModel.isChecking.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     var showAddSubdomainSheet by remember { mutableStateOf(false) }
@@ -217,8 +221,8 @@ fun DomainDetailScreen(
     pendingEditSubdomain?.let { subdomain ->
         EditSubdomainDialog(
             subdomain = subdomain,
-            onSave = { prefix, isApex, healthPath, rangeStart, rangeEnd, interval ->
-                viewModel.updateSubdomain(subdomain.id, prefix, isApex, healthPath, rangeStart, rangeEnd, interval)
+            onSave = { prefix, isApex, healthPath, rangeStart, rangeEnd, interval, options ->
+                viewModel.updateSubdomain(subdomain.id, prefix, isApex, healthPath, rangeStart, rangeEnd, interval, options)
                 pendingEditSubdomain = null
             },
             onDismiss = { pendingEditSubdomain = null },
@@ -253,6 +257,14 @@ fun DomainDetailScreen(
                     }
                 },
                 actions = {
+                    TonalIconButton(onClick = { if (!isChecking) viewModel.checkNow() }) {
+                        if (isChecking) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = "Check health now")
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
                     Box(modifier = Modifier.padding(end = 8.dp)) {
                         TonalIconButton(onClick = { showDomainMenu = true }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "Domain actions")
@@ -365,8 +377,8 @@ fun DomainDetailScreen(
     if (showAddSubdomainSheet) {
         ModalBottomSheet(onDismissRequest = { showAddSubdomainSheet = false }, sheetState = subdomainSheetState) {
             AddSubdomainSheet(
-                onAdd = { prefix, isApex, path, rangeStart, rangeEnd, interval ->
-                    viewModel.addSubdomain(prefix, isApex, path, rangeStart, rangeEnd, interval)
+                onAdd = { prefix, isApex, path, rangeStart, rangeEnd, interval, options ->
+                    viewModel.addSubdomain(prefix, isApex, path, rangeStart, rangeEnd, interval, options)
                     scope.launch { subdomainSheetState.hide() }.invokeOnCompletion { showAddSubdomainSheet = false }
                 },
                 onDismiss = {
@@ -524,7 +536,8 @@ private fun SubdomainSection(
                 )
                 Text(
                     text = if (hasHealthCheck) {
-                        "${subdomain.healthPath} · ${subdomain.healthRangeStart}–${subdomain.healthRangeEnd} · every ${subdomain.healthIntervalSeconds}s"
+                        val port = subdomain.healthPort?.let { ":$it" }.orEmpty()
+                        "${subdomain.healthScheme.label.uppercase()}$port · ${subdomain.healthPath} · ${subdomain.healthRangeStart}–${subdomain.healthRangeEnd} · every ${subdomain.healthIntervalSeconds}s"
                     } else {
                         "No health check"
                     },
@@ -679,16 +692,21 @@ private fun InstanceRow(
     }
 }
 
-/** Segmented picker for the health-check poll interval. */
+/** Segmented single-choice picker; every option gets an equal share of the row. */
 @Composable
-private fun PollIntervalPicker(selected: Int, onSelect: (Int) -> Unit) {
+private fun <T> SegmentedPicker(
+    label: String,
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelect: (T) -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Poll interval", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            listOf(15, 30, 60, 120).forEach { seconds ->
-                val isSelected = selected == seconds
+            options.forEach { (value, text) ->
+                val isSelected = selected == value
                 Surface(
-                    onClick = { onSelect(seconds) },
+                    onClick = { onSelect(value) },
                     modifier = Modifier.weight(1f),
                     shape = MaterialTheme.shapes.small,
                     color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
@@ -698,7 +716,7 @@ private fun PollIntervalPicker(selected: Int, onSelect: (Int) -> Unit) {
                     ),
                 ) {
                     Text(
-                        "${seconds}s",
+                        text,
                         modifier = Modifier.padding(vertical = 10.dp),
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.labelLarge,
@@ -707,6 +725,60 @@ private fun PollIntervalPicker(selected: Int, onSelect: (Int) -> Unit) {
                     )
                 }
             }
+        }
+    }
+}
+
+/** Segmented picker for the health-check poll interval. */
+@Composable
+private fun PollIntervalPicker(selected: Int, onSelect: (Int) -> Unit) {
+    SegmentedPicker(
+        label = "Poll interval",
+        options = listOf(15, 30, 60, 120).map { it to "${it}s" },
+        selected = selected,
+        onSelect = onSelect,
+    )
+}
+
+private const val MAX_PORT = 65_535
+private const val MAX_TIMEOUT_SECONDS = 60
+
+/** Scheme, port and timeout of a health check. A blank or out-of-range port means the scheme's default. */
+@Composable
+private fun HealthCheckOptionsFields(options: HealthCheckOptions, onChange: (HealthCheckOptions) -> Unit) {
+    var portText by remember { mutableStateOf(options.port?.toString().orEmpty()) }
+    var timeoutText by remember { mutableStateOf(options.timeoutSeconds.toString()) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SegmentedPicker(
+            label = "Scheme",
+            options = HealthScheme.entries.map { it to it.label.uppercase() },
+            selected = options.scheme,
+            onSelect = { onChange(options.copy(scheme = it)) },
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SwTextField(
+                value = portText,
+                onValueChange = { input ->
+                    portText = input.filter(Char::isDigit).take(5)
+                    onChange(options.copy(port = portText.toIntOrNull()?.takeIf { it in 1..MAX_PORT }))
+                },
+                label = { Text("Port") },
+                placeholder = { Text(if (options.scheme == HealthScheme.HTTPS) "443" else "80") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
+            SwTextField(
+                value = timeoutText,
+                onValueChange = { input ->
+                    timeoutText = input.filter(Char::isDigit).take(2)
+                    timeoutText.toIntOrNull()?.coerceIn(1, MAX_TIMEOUT_SECONDS)
+                        ?.let { onChange(options.copy(timeoutSeconds = it)) }
+                },
+                label = { Text("Timeout (s)") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+            )
         }
     }
 }
@@ -796,7 +868,7 @@ private fun EditDomainDialog(
 @Composable
 private fun EditSubdomainDialog(
     subdomain: Subdomain,
-    onSave: (prefix: String, isApex: Boolean, healthPath: String, rangeStart: Int, rangeEnd: Int, interval: Int) -> Unit,
+    onSave: (prefix: String, isApex: Boolean, healthPath: String, rangeStart: Int, rangeEnd: Int, interval: Int, options: HealthCheckOptions) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var isApex by remember { mutableStateOf(subdomain.isApex) }
@@ -806,6 +878,7 @@ private fun EditSubdomainDialog(
     var rangeStart by remember { mutableIntStateOf(subdomain.healthRangeStart) }
     var rangeEnd by remember { mutableIntStateOf(subdomain.healthRangeEnd) }
     var interval by remember { mutableIntStateOf(subdomain.healthIntervalSeconds) }
+    var options by remember { mutableStateOf(subdomain.healthOptions) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -838,6 +911,7 @@ private fun EditSubdomainDialog(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    HealthCheckOptionsFields(options = options, onChange = { options = it })
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SwTextField(
                             value = rangeStart.toString(),
@@ -862,7 +936,7 @@ private fun EditSubdomainDialog(
             TextButton(
                 onClick = {
                     val path = if (healthEnabled) healthPath.ifBlank { "/" } else ""
-                    onSave(if (isApex) "" else prefix.trim(), isApex, path, rangeStart, rangeEnd, interval)
+                    onSave(if (isApex) "" else prefix.trim(), isApex, path, rangeStart, rangeEnd, interval, options)
                 },
                 enabled = isApex || prefix.isNotBlank(),
             ) {
@@ -1036,7 +1110,7 @@ private fun AddInstanceSheet(
 
 @Composable
 private fun AddSubdomainSheet(
-    onAdd: (String, Boolean, String, Int, Int, Int) -> Unit,
+    onAdd: (String, Boolean, String, Int, Int, Int, HealthCheckOptions) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var prefix by remember { mutableStateOf("") }
@@ -1046,6 +1120,7 @@ private fun AddSubdomainSheet(
     var rangeStart by remember { mutableIntStateOf(200) }
     var rangeEnd by remember { mutableIntStateOf(299) }
     var interval by remember { mutableIntStateOf(30) }
+    var options by remember { mutableStateOf(HealthCheckOptions()) }
 
     Column(
         modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 16.dp),
@@ -1070,6 +1145,7 @@ private fun AddSubdomainSheet(
                 placeholder = { Text("/") },
                 modifier = Modifier.fillMaxWidth(), singleLine = true,
             )
+            HealthCheckOptionsFields(options = options, onChange = { options = it })
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SwTextField(value = rangeStart.toString(), onValueChange = { rangeStart = it.toIntOrNull() ?: rangeStart }, label = { Text("Status Min") }, modifier = Modifier.weight(1f), singleLine = true)
                 SwTextField(value = rangeEnd.toString(), onValueChange = { rangeEnd = it.toIntOrNull() ?: rangeEnd }, label = { Text("Status Max") }, modifier = Modifier.weight(1f), singleLine = true)
@@ -1085,7 +1161,7 @@ private fun AddSubdomainSheet(
             TextButton(onClick = onDismiss) { Text("Cancel") }
             SwButton(
                 text = "Add subdomain",
-                onClick = { onAdd(if (isApex) "" else prefix, isApex, healthPath, rangeStart, rangeEnd, interval) },
+                onClick = { onAdd(if (isApex) "" else prefix, isApex, healthPath, rangeStart, rangeEnd, interval, options) },
                 enabled = isApex || prefix.isNotBlank(),
                 modifier = Modifier.weight(1f),
             )

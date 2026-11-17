@@ -4,7 +4,7 @@ import android.util.Log
 import dev.tsk.server.watcher.core.domain.model.Ec2State
 import dev.tsk.server.watcher.core.domain.model.HealthStatus
 import dev.tsk.server.watcher.core.domain.model.Instance
-import dev.tsk.server.watcher.core.domain.model.hostName
+import dev.tsk.server.watcher.core.domain.model.healthBaseUrl
 import dev.tsk.server.watcher.core.domain.repository.IDomainRepository
 import dev.tsk.server.watcher.core.domain.repository.IEc2Repository
 import dev.tsk.server.watcher.core.domain.repository.IHealthRepository
@@ -79,10 +79,11 @@ class ObserveDomainStatusUseCase @Inject constructor(
                         ) {
                             try {
                                 healthRepository.check(
-                                    url = "https://${subdomain.hostName(domain)}",
+                                    url = subdomain.healthBaseUrl(domain),
                                     path = subdomain.healthPath,
                                     expectedRangeStart = subdomain.healthRangeStart,
                                     expectedRangeEnd = subdomain.healthRangeEnd,
+                                    timeoutSeconds = subdomain.healthTimeoutSeconds,
                                 )
                             } catch (e: CancellationException) {
                                 throw e
